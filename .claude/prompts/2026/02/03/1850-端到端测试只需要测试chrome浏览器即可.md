@@ -1,0 +1,3 @@
+session_id:aca1eeab-4b2f-4e0e-ace3-7074d68909a4
+
+端到端测试只需要测试chrome浏览器即可
