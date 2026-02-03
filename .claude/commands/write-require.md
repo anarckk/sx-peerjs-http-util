@@ -1,4 +1,4 @@
-根据 `/需求提示词/`，以及 通过 get-all-user-prompts skill 读取用户的所有历史提示词，编写 `docs/用户需求文档.md`。
+根据 `/.claude/需求提示词/`，以及 通过 get-all-user-prompts skill 读取用户的所有历史提示词，编写 `docs/用户需求文档.md`。
 
 你要做检查，确保每一条内容都能找的到依据。
 
