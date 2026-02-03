@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PeerJS HTTP Server Error Test</title>
+  <script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
+</head>
+<body>
+  <h1>PeerJS HTTP Server (Error Handler)</h1>
+  <div id="peer-id">Connecting...</div>
+  <div id="log"></div>
+
+  <script type="module">
+    // 请求处理器 - 返回错误
+    async function handleRequest(request) {
+      if (request.method === 'ERROR') {
+        throw new Error('Intentional test error');
+      }
+      return {
+        status: 200,
+        data: { message: 'OK' },
+      };
+    }
+
+    // 创建 Peer 实例
+    const peer = new Peer();
+
+    peer.on('open', (id) => {
+      document.getElementById('peer-id').textContent = `Peer ID: ${id}`;
+
+      // 通知测试脚本 Peer ID 已准备好
+      if (window.getServerPeerId) {
+        window.getServerPeerId(id);
+      }
+
+      log('Peer connected with ID: ' + id);
+    });
+
+    peer.on('connection', (conn) => {
+      log('New connection from: ' + conn.peer);
+
+      conn.on('data', async (data) => {
+        log('Received: ' + JSON.stringify(data));
+
+        if (data.type === 'request') {
+          try {
+            const response = await handleRequest(data.request);
+            conn.send({
+              type: 'response',
+              id: data.id,
+              response,
+            });
+            log('Sent response: ' + JSON.stringify(response));
+          } catch (error) {
+            const errorResponse = {
+              type: 'response',
+              id: data.id,
+              response: {
+                status: 500,
+                data: { error: error.message },
+              },
+            };
+            conn.send(errorResponse);
+            log('Sent error response: ' + JSON.stringify(errorResponse));
+          }
+        }
+      });
+
+      conn.on('close', () => {
+        log('Connection closed');
+      });
+
+      conn.on('error', (err) => {
+        log('Connection error: ' + err.message);
+      });
+    });
+
+    peer.on('error', (err) => {
+      log('Peer error: ' + err.message);
+    });
+
+    function log(message) {
+      const logDiv = document.getElementById('log');
+      const p = document.createElement('p');
+      p.textContent = new Date().toISOString() + ' - ' + message;
+      logDiv.appendChild(p);
+    }
+  </script>
+</body>
+</html>

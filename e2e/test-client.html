@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PeerJS HTTP Client Test</title>
+  <script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
+</head>
+<body>
+  <h1>PeerJS HTTP Client</h1>
+  <div id="status">Ready</div>
+  <div id="log"></div>
+
+  <script type="module">
+    // 导入库
+    import { request } from '../dist/index.js';
+
+    // 导出到 window 以便测试脚本访问
+    window.sxPeerHttpUtil = { request };
+
+    function log(message) {
+      const logDiv = document.getElementById('log');
+      const p = document.createElement('p');
+      p.textContent = new Date().toISOString() + ' - ' + message;
+      logDiv.appendChild(p);
+    }
+
+    document.getElementById('status').textContent = 'Client loaded, ready to send requests';
+    log('Client initialized');
+  </script>
+</body>
+</html>
