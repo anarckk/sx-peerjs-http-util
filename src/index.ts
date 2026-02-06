@@ -104,8 +104,15 @@ export class PeerJsWrapper {
             if (pending) {
               clearTimeout(pending.timeout);
               this.pendingRequests.delete(requestId);
-              // 自动拆箱：只返回 data 部分
-              pending.resolve(message.response!.data);
+
+              const response = message.response!;
+              // 校验状态码，非 2xx 则 reject
+              if (response.status < 200 || response.status >= 300) {
+                pending.reject(new Error(`Request failed: ${response.status} ${JSON.stringify(response.data)}`));
+              } else {
+                // 自动拆箱：只返回 data 部分
+                pending.resolve(response.data);
+              }
             }
             conn.close();
           }
