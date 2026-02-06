@@ -1,1 +1,1 @@
-@.claude/用户需求文档.md
+@.claude/产品说明.md 
