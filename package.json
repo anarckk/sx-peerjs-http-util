@@ -1,6 +1,6 @@
 {
   "name": "sx-peerjs-http-util",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A browser library that wraps PeerJS with a simple HTTP-like API",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
