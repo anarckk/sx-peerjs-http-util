@@ -19,16 +19,6 @@ export interface Response {
 }
 
 /**
- * 请求处理器函数类型（返回完整 Response）
- */
-export type RequestHandler = (request: Request) => Promise<Response> | Response;
-
-/**
  * 简化处理器函数类型（直接返回数据，自动装箱为 Response）
  */
 export type SimpleHandler = (data?: unknown) => Promise<unknown> | unknown;
-
-/**
- * 路由映射类型
- */
-export type RouterMap = Record<string, RequestHandler>;

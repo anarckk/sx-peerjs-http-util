@@ -1,5 +1,5 @@
 import { Peer, DataConnection } from 'peerjs';
-import type { Request, Response, RequestHandler, SimpleHandler, RouterMap } from './types';
+import type { Request, Response, SimpleHandler } from './types';
 
 // 内部消息格式
 interface InternalMessage {
@@ -35,10 +35,7 @@ export class PeerJsWrapper {
 
   /**
    * 处理传入请求
-   * 由子类通过 setHandler 或 setRouter 设置
    */
-  private requestHandler?: RequestHandler;
-  private router?: RouterMap;
   private simpleHandlers = new Map<string, SimpleHandler>();
 
   /**
@@ -184,22 +181,6 @@ export class PeerJsWrapper {
   }
 
   /**
-   * 设置请求处理器（返回完整 Response）
-   * @param handler 请求处理器函数
-   */
-  setHandler(handler: RequestHandler): void {
-    this.requestHandler = handler;
-  }
-
-  /**
-   * 设置路由处理器（返回完整 Response）
-   * @param router 路由映射，key 是 path，value 是对应的处理器
-   */
-  setRouter(router: RouterMap): void {
-    this.router = router;
-  }
-
-  /**
    * 注册简化处理器（直接返回数据，自动装箱）
    * @param path 请求路径
    * @param handler 处理器函数，接收请求数据，直接返回响应数据
@@ -220,7 +201,6 @@ export class PeerJsWrapper {
    * 内部请求处理方法
    */
   private async handleRequest(request: Request): Promise<Response> {
-    // 优先使用简化处理器
     const simpleHandler = this.simpleHandlers.get(request.path);
     if (simpleHandler) {
       const data = await simpleHandler(request.data);
@@ -228,28 +208,10 @@ export class PeerJsWrapper {
       return { status: 200, data };
     }
 
-    // 如果设置了路由，使用路由匹配
-    if (this.router) {
-      const handler = this.router[request.path];
-      if (handler) {
-        return await handler(request);
-      }
-      // 未找到匹配的路由
-      return {
-        status: 404,
-        data: { error: `Path not found: ${request.path}` },
-      };
-    }
-
-    // 如果设置了单一处理器
-    if (this.requestHandler) {
-      return await this.requestHandler(request);
-    }
-
-    // 没有设置任何处理器
+    // 没有找到匹配的处理器
     return {
-      status: 501,
-      data: { error: 'No handler configured' },
+      status: 404,
+      data: { error: `Path not found: ${request.path}` },
     };
   }
 
@@ -274,4 +236,4 @@ export class PeerJsWrapper {
 }
 
 // 导出类型
-export type { Request, Response, RequestHandler, SimpleHandler, RouterMap };
+export type { Request, Response, SimpleHandler };
