@@ -2,8 +2,8 @@
  * 请求数据结构
  */
 export interface Request {
-  /** 请求方法 */
-  method?: string;
+  /** 请求路径 */
+  path: string;
   /** 请求数据 */
   data?: unknown;
 }
@@ -19,34 +19,16 @@ export interface Response {
 }
 
 /**
- * PeerJS HTTP 请求选项
- */
-export interface RequestOptions {
-  /** 对端设备的 Peer ID */
-  peerId: string;
-  /** 请求数据 */
-  request: Request;
-}
-
-/**
- * PeerJS HTTP 服务端选项
- */
-export interface ServerOptions {
-  /** PeerJS 实例 */
-  peer: any; // Peer 实际上是 peerjs 导出的类型
-}
-
-/**
- * 请求处理器函数类型
+ * 请求处理器函数类型（返回完整 Response）
  */
 export type RequestHandler = (request: Request) => Promise<Response> | Response;
 
 /**
- * 连接事件数据
+ * 简化处理器函数类型（直接返回数据，自动装箱为 Response）
  */
-export interface ConnectionData {
-  /** 发送请求 */
-  send: (request: Request) => Promise<Response>;
-  /** 关闭连接 */
-  close: () => void;
-}
+export type SimpleHandler = (data?: unknown) => Promise<unknown> | unknown;
+
+/**
+ * 路由映射类型
+ */
+export type RouterMap = Record<string, RequestHandler>;

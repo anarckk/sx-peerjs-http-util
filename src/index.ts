@@ -1,5 +1,5 @@
 import { Peer, DataConnection } from 'peerjs';
-import type { Request, Response, RequestOptions, ServerOptions, RequestHandler, ConnectionData } from './types';
+import type { Request, Response, RequestHandler, SimpleHandler, RouterMap } from './types';
 
 // 内部消息格式
 interface InternalMessage {
@@ -10,142 +10,268 @@ interface InternalMessage {
 }
 
 /**
- * 发送 HTTP 请求到指定 Peer
- * @param options 请求选项
- * @returns Promise<Response>
+ * PeerJsWrapper - 封装 PeerJS 为类似 HTTP 的 API
+ *
+ * @example
+ * ```js
+ * const wrapper = new PeerJsWrapper();
+ * const data = await wrapper.send(peerId, '/api/hello', { name: 'world' });
+ * console.log(data); // 直接输出响应数据
+ *
+ * // 服务端注册处理器
+ * wrapper.registerHandler('/api/hello', (data) => {
+ *   return { message: 'hello' }; // 直接返回数据
+ * });
+ * ```
  */
-export async function request(options: RequestOptions): Promise<Response> {
-  const { peerId, request } = options;
+export class PeerJsWrapper {
+  private peerInstance: Peer;
+  private connections = new Set<DataConnection>();
+  private pendingRequests = new Map<string, {
+    resolve: (data: unknown) => void;
+    reject: (error: Error) => void;
+    timeout: NodeJS.Timeout;
+  }>();
 
-  return new Promise((resolve, reject) => {
-    // 创建临时 Peer 用于发送请求
-    const tempPeer = new Peer();
+  /**
+   * 处理传入请求
+   * 由子类通过 setHandler 或 setRouter 设置
+   */
+  private requestHandler?: RequestHandler;
+  private router?: RouterMap;
+  private simpleHandlers = new Map<string, SimpleHandler>();
 
-    // 超时处理
-    const timeout = setTimeout(() => {
-      conn.close();
-      tempPeer.destroy();
-      reject(new Error('Request timeout'));
-    }, 30000);
+  /**
+   * 创建 PeerJsWrapper 实例
+   * @param peerId 可选的 Peer ID，如果不提供则由 PeerJS 服务器自动生成
+   */
+  constructor(peerId?: string) {
+    this.peerInstance = peerId ? new Peer(peerId) : new Peer();
+    this.setupIncomingConnectionHandler();
+  }
 
-    let conn: DataConnection;
-    let requestId: string;
+  /**
+   * 获取当前 Peer ID
+   * @returns Promise<string> 当 Peer 准备好时返回 Peer ID
+   */
+  getPeerId(): Promise<string> {
+    return new Promise((resolve, reject) => {
+      if (this.peerInstance.id) {
+        resolve(this.peerInstance.id);
+      } else {
+        this.peerInstance.on('open', (id) => resolve(id));
+        this.peerInstance.on('error', (err) => reject(err));
+      }
+    });
+  }
 
-    tempPeer.on('open', (id) => {
-      // 连接到对端 Peer
-      conn = tempPeer.connect(peerId, {
-        reliable: true,
+  /**
+   * 发送请求到指定 Peer
+   * @param peerId 对端设备 ID
+   * @param path 请求路径
+   * @param data 请求数据
+   * @returns Promise<unknown> 返回响应数据（自动拆箱，只返回 data 部分）
+   */
+  send(peerId: string, path: string, data?: unknown): Promise<unknown> {
+    return new Promise((resolve, reject) => {
+      // 等待 peer 实例准备好
+      this.getPeerId().then(() => {
+        // 每次发送消息时，都连接一个新的 conn
+        const conn = this.peerInstance.connect(peerId, {
+          reliable: true,
+        });
+
+        const timeout = setTimeout(() => {
+          conn.close();
+          this.pendingRequests.delete(requestId);
+          reject(new Error(`Request timeout: ${peerId}${path}`));
+        }, 30000);
+
+        const requestId = `${this.peerInstance.id}-${Date.now()}-${Math.random()}`;
+        this.pendingRequests.set(requestId, { resolve, reject, timeout });
+
+        conn.on('open', () => {
+          const request: Request = { path, data };
+          const message: InternalMessage = {
+            type: 'request',
+            id: requestId,
+            request,
+          };
+          conn.send(message);
+        });
+
+        conn.on('data', (data: unknown) => {
+          const message = data as InternalMessage;
+          if (message.type === 'response' && message.id === requestId) {
+            const pending = this.pendingRequests.get(requestId);
+            if (pending) {
+              clearTimeout(pending.timeout);
+              this.pendingRequests.delete(requestId);
+              // 自动拆箱：只返回 data 部分
+              pending.resolve(message.response!.data);
+            }
+            conn.close();
+          }
+        });
+
+        conn.on('error', (err) => {
+          const pending = this.pendingRequests.get(requestId);
+          if (pending) {
+            clearTimeout(pending.timeout);
+            this.pendingRequests.delete(requestId);
+            pending.reject(err as Error);
+          }
+        });
+
+        conn.on('close', () => {
+          const pending = this.pendingRequests.get(requestId);
+          if (pending) {
+            clearTimeout(pending.timeout);
+            this.pendingRequests.delete(requestId);
+            pending.reject(new Error('Connection closed'));
+          }
+        });
+      }).catch((err) => {
+        reject(err);
       });
+    });
+  }
 
-      conn.on('open', () => {
-        // 生成请求 ID
-        requestId = `${tempPeer.id}-${Date.now()}`;
+  /**
+   * 设置传入连接处理器
+   */
+  private setupIncomingConnectionHandler(): void {
+    this.peerInstance.on('connection', (conn: DataConnection) => {
+      this.connections.add(conn);
 
-        // 发送请求
-        const message: InternalMessage = {
-          type: 'request',
-          id: requestId,
-          request,
-        };
-
-        conn.send(message);
-      });
-
-      conn.on('data', (data: unknown) => {
+      conn.on('data', async (data: unknown) => {
         const message = data as InternalMessage;
 
-        if (message.type === 'response' && message.id === requestId) {
-          clearTimeout(timeout);
-          conn.close();
-          tempPeer.destroy();
-          resolve(message.response!);
-        }
-      });
+        if (message.type === 'request' && message.request) {
+          try {
+            const response = await this.handleRequest(message.request);
 
-      conn.on('error', (err) => {
-        clearTimeout(timeout);
-        tempPeer.destroy();
-        reject(err);
+            const responseMessage: InternalMessage = {
+              type: 'response',
+              id: message.id,
+              response,
+            };
+
+            conn.send(responseMessage);
+          } catch (error) {
+            const errorResponse: InternalMessage = {
+              type: 'response',
+              id: message.id,
+              response: {
+                status: 500,
+                data: { error: error instanceof Error ? error.message : 'Unknown error' },
+              },
+            };
+
+            conn.send(errorResponse);
+          }
+        }
       });
 
       conn.on('close', () => {
-        clearTimeout(timeout);
-        tempPeer.destroy();
+        this.connections.delete(conn);
+      });
+
+      conn.on('error', () => {
+        this.connections.delete(conn);
       });
     });
+  }
 
-    tempPeer.on('error', (err) => {
-      clearTimeout(timeout);
-      reject(err);
-    });
-  });
-}
+  /**
+   * 设置请求处理器（返回完整 Response）
+   * @param handler 请求处理器函数
+   */
+  setHandler(handler: RequestHandler): void {
+    this.requestHandler = handler;
+  }
 
-/**
- * 创建 PeerJS HTTP 服务器
- * @param options 服务端选项
- * @param handler 请求处理器
- * @returns 清理函数
- */
-export function createServer(
-  peer: any, // Peer 实例
-  handler: RequestHandler
-): () => void {
-  const connections = new Set<DataConnection>();
+  /**
+   * 设置路由处理器（返回完整 Response）
+   * @param router 路由映射，key 是 path，value 是对应的处理器
+   */
+  setRouter(router: RouterMap): void {
+    this.router = router;
+  }
 
-  // 处理传入连接
-  peer.on('connection', (conn: DataConnection) => {
-    connections.add(conn);
+  /**
+   * 注册简化处理器（直接返回数据，自动装箱）
+   * @param path 请求路径
+   * @param handler 处理器函数，接收请求数据，直接返回响应数据
+   */
+  registerHandler(path: string, handler: SimpleHandler): void {
+    this.simpleHandlers.set(path, handler);
+  }
 
-    conn.on('data', async (data: unknown) => {
-      const message = data as InternalMessage;
+  /**
+   * 注销简化处理器
+   * @param path 请求路径
+   */
+  unregisterHandler(path: string): void {
+    this.simpleHandlers.delete(path);
+  }
 
-      if (message.type === 'request') {
-        try {
-          // 调用处理器处理请求
-          const response = await handler(message.request!);
+  /**
+   * 内部请求处理方法
+   */
+  private async handleRequest(request: Request): Promise<Response> {
+    // 优先使用简化处理器
+    const simpleHandler = this.simpleHandlers.get(request.path);
+    if (simpleHandler) {
+      const data = await simpleHandler(request.data);
+      // 自动装箱：将返回的数据包装成 Response
+      return { status: 200, data };
+    }
 
-          // 发送响应
-          const responseMessage: InternalMessage = {
-            type: 'response',
-            id: message.id,
-            response,
-          };
-
-          conn.send(responseMessage);
-        } catch (error) {
-          // 发送错误响应
-          const errorResponse: InternalMessage = {
-            type: 'response',
-            id: message.id,
-            response: {
-              status: 500,
-              data: { error: error instanceof Error ? error.message : 'Unknown error' },
-            },
-          };
-
-          conn.send(errorResponse);
-        }
+    // 如果设置了路由，使用路由匹配
+    if (this.router) {
+      const handler = this.router[request.path];
+      if (handler) {
+        return await handler(request);
       }
-    });
+      // 未找到匹配的路由
+      return {
+        status: 404,
+        data: { error: `Path not found: ${request.path}` },
+      };
+    }
 
-    conn.on('close', () => {
-      connections.delete(conn);
-    });
+    // 如果设置了单一处理器
+    if (this.requestHandler) {
+      return await this.requestHandler(request);
+    }
 
-    conn.on('error', () => {
-      connections.delete(conn);
-    });
-  });
+    // 没有设置任何处理器
+    return {
+      status: 501,
+      data: { error: 'No handler configured' },
+    };
+  }
 
-  // 返回清理函数
-  return () => {
-    for (const conn of connections) {
+  /**
+   * 关闭所有连接并销毁 Peer 实例
+   */
+  destroy(): void {
+    for (const conn of this.connections.values()) {
       conn.close();
     }
-    connections.clear();
-  };
+    this.connections.clear();
+
+    for (const pending of this.pendingRequests.values()) {
+      clearTimeout(pending.timeout);
+      pending.reject(new Error('Peer destroyed'));
+    }
+    this.pendingRequests.clear();
+    this.simpleHandlers.clear();
+
+    this.peerInstance.destroy();
+  }
 }
 
 // 导出类型
-export type { Request, Response, RequestOptions, ServerOptions, RequestHandler, ConnectionData };
+export type { Request, Response, RequestHandler, SimpleHandler, RouterMap };

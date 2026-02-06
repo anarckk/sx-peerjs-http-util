@@ -12,21 +12,33 @@
   <div id="log"></div>
 
   <script type="module">
-    // 请求处理器
-    async function handleRequest(request) {
+    // 导入库
+    import { PeerJsWrapper } from '../dist/index.js';
+
+    // 创建 wrapper 实例
+    const wrapper = new PeerJsWrapper();
+
+    // 使用 registerHandler 注册简化处理器（自动装箱）
+    wrapper.registerHandler('/api/hello', (data) => {
       return {
-        status: 200,
-        data: {
-          message: 'Hello from server',
-          received: request.data,
-        },
+        message: 'Hello from server',
+        received: data,
       };
-    }
+    });
 
-    // 创建 Peer 实例
-    const peer = new Peer();
+    wrapper.registerHandler('/api/echo', (data) => {
+      // 直接返回数据，会自动装箱
+      return data;
+    });
 
-    peer.on('open', (id) => {
+    wrapper.registerHandler('/api/error', () => {
+      throw new Error('Test error from server');
+    });
+
+    // 导出到 window 以便测试脚本访问
+    window.testWrapper = wrapper;
+
+    wrapper.getPeerId().then((id) => {
       document.getElementById('peer-id').textContent = `Peer ID: ${id}`;
 
       // 通知测试脚本 Peer ID 已准备好
@@ -35,46 +47,7 @@
       }
 
       log('Peer connected with ID: ' + id);
-    });
-
-    peer.on('connection', (conn) => {
-      log('New connection from: ' + conn.peer);
-
-      conn.on('data', async (data) => {
-        log('Received: ' + JSON.stringify(data));
-
-        if (data.type === 'request') {
-          try {
-            const response = await handleRequest(data.request);
-            conn.send({
-              type: 'response',
-              id: data.id,
-              response,
-            });
-            log('Sent response: ' + JSON.stringify(response));
-          } catch (error) {
-            conn.send({
-              type: 'response',
-              id: data.id,
-              response: {
-                status: 500,
-                data: { error: error.message },
-              },
-            });
-          }
-        }
-      });
-
-      conn.on('close', () => {
-        log('Connection closed');
-      });
-
-      conn.on('error', (err) => {
-        log('Connection error: ' + err.message);
-      });
-    });
-
-    peer.on('error', (err) => {
+    }).catch((err) => {
       log('Peer error: ' + err.message);
     });
 

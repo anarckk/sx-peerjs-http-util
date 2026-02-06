@@ -13,10 +13,23 @@
 
   <script type="module">
     // 导入库
-    import { request } from '../dist/index.js';
+    import { PeerJsWrapper } from '../dist/index.js';
+
+    // 创建 wrapper 实例
+    const wrapper = new PeerJsWrapper();
 
     // 导出到 window 以便测试脚本访问
-    window.sxPeerHttpUtil = { request };
+    window.sxPeerHttpUtil = {
+      wrapper,
+      send: (peerId, path, data) => wrapper.send(peerId, path, data),
+    };
+
+    wrapper.getPeerId().then((id) => {
+      log('Client connected with ID: ' + id);
+      document.getElementById('status').textContent = 'Client ready, Peer ID: ' + id;
+    }).catch((err) => {
+      log('Client error: ' + err.message);
+    });
 
     function log(message) {
       const logDiv = document.getElementById('log');
@@ -24,9 +37,6 @@
       p.textContent = new Date().toISOString() + ' - ' + message;
       logDiv.appendChild(p);
     }
-
-    document.getElementById('status').textContent = 'Client loaded, ready to send requests';
-    log('Client initialized');
   </script>
 </body>
 </html>
