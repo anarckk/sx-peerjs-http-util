@@ -20,6 +20,9 @@
   ],
   "author": "",
   "license": "ISC",
+  "files": [
+    "dist"
+  ],
   "dependencies": {
     "peerjs": "^1.5.5"
   },
