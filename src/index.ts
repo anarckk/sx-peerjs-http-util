@@ -10,6 +10,16 @@ interface InternalMessage {
 }
 
 /**
+ * 服务器配置（PeerJS 信令服务器）
+ */
+export interface ServerConfig {
+  host?: string;
+  port?: number;
+  path?: string;
+  secure?: boolean;
+}
+
+/**
  * 生成 UUID v4
  */
 function generateUUID(): string {
@@ -80,13 +90,20 @@ export class PeerJsWrapper {
   private isDebug: boolean;
 
   /**
+   * 服务器配置
+   */
+  private serverConfig?: ServerConfig;
+
+  /**
    * 创建 PeerJsWrapper 实例
    * @param peerId 可选的 Peer ID，如果不提供则自动生成 UUID
    * @param isDebug 是否开启调试模式，开启后会打印事件日志
+   * @param server 可选的信令服务器配置，不提供则使用 PeerJS 公共服务器
    */
-  constructor(peerId?: string, isDebug?: boolean) {
+  constructor(peerId?: string, isDebug?: boolean, server?: ServerConfig) {
     this.myPeerId = peerId || generateUUID();
     this.isDebug = isDebug ?? false;
+    this.serverConfig = server;
     this.connect();
   }
 
@@ -109,7 +126,10 @@ export class PeerJsWrapper {
   private connect(): void {
     if (this.isDestroyed) return;
 
-    this.peerInstance = new Peer(this.myPeerId);
+    this.peerInstance = this.serverConfig
+      ? new Peer(this.myPeerId, { ...this.serverConfig })
+      : new Peer(this.myPeerId);
+
     this.setupPeerEventHandlers();
   }
 

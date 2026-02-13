@@ -30,10 +30,10 @@ sx-peerjs-http-util/
 - 此库专为浏览器设计，不是给 Node.js 后端环境使用
 
 ### API 设计
-- `new PeerJsWrapper(peerId?, isDebug?)` - 创建实例，可选传入 peerId（不传则自动生成 UUID），可选开启调试模式
+- `new PeerJsWrapper(peerId?, isDebug?, server?)` - 创建实例，可选传入 peerId（不传则自动生成 UUID），可选开启调试模式，可选自定义信令服务器
 - `getPeerId()` - 同步方法，返回 `string`（不再是 Promise）
 - `whenReady()` - 等待连接就绪，返回 `Promise<void>`
-- `send(peerId, path, data)` - 发送请求到对端设备，返回 `Promise<unknown>`
+- `send(peerId, path, data)` - 发送请求到对端设备，返回 `Promise<unknown>`（非 2xx 状态码会抛出异常）
 - `registerHandler(path, handler)` - 注册路径处理器
 - `unregisterHandler(path)` - 销毁路径处理器
 - `destroy()` - 销毁实例
@@ -93,10 +93,49 @@ sx-peerjs-http-util/
 - **问题**：PeerJS 默认由服务器分配 ID，断线重连后 ID 会变化
 - **解决**：构造时本地生成并保存 ID（myPeerId），重连时使用保存的 ID
 
+### 5. E2E 测试应使用 UMD 版本
+- **问题**：ESM 版本在浏览器中直接加载需要 importmap 或打包工具，否则无法解析 `peerjs` 裸模块说明符
+- **解决**：E2E 测试使用 UMD 版本（已内置 peerjs），通过 `<script>` 标签引入
+
+### 6. 测试页面与测试脚本的时序问题
+- **问题**：页面 `whenReady()` 可能在测试脚本设置回调之前完成，导致回调丢失
+- **解决**：页面存储 `peerReady` 和 `peerId` 状态，测试脚本检查状态或等待回调
+
+### 7. E2E 测试需要 HTTP 服务器
+- **问题**：`file://` 协议不支持 ES 模块加载（CORS 限制）
+- **解决**：使用 `npx serve` 启动 HTTP 服务器，测试通过 HTTP 访问页面
+
 ## 分析时间
 
-2026-02-13 21:30
+2026-02-13 22:30
 
 ---
 
+# e2e文档规范
+
+在项目目录 CLAUDE.md 中维护一个篇章 `# e2e测试用例`，格式如下：
+
+- [x] {测试项A}
+- [ ] {测试项A}
+
+记录所有的e2e测试项，以及其是否通过e2e测试。
+
+---
+
+# e2e测试用例
+
+- [x] should send request and receive response (auto-unbox)
+- [x] should handle 404 when path not found
+- [x] should handle error from handler
+- [x] should echo data back
+- [x] should handle multiple concurrent requests
+- [x] should work without data parameter
+- [x] should support registerHandler and unregisterHandler
+
+**运行方式**：
+1. 启动私有信令服务器：`cd peerjs-server && node server.js`
+2. 启动 HTTP 服务器：`npx serve -l 8080`
+3. 运行测试：`npm run test:e2e`
+
+---
 

@@ -163,12 +163,17 @@ wrapper.destroy();
 
 ## API 参考
 
-### `new PeerJsWrapper(peerId?: string, isDebug?: boolean)`
+### `new PeerJsWrapper(peerId?: string, isDebug?: boolean, server?: ServerConfig)`
 
 创建 PeerJsWrapper 实例。
 
 - `peerId` (可选): 指定 Peer ID，不提供则自动生成 UUID
 - `isDebug` (可选): 是否开启调试模式，开启后会打印事件日志，格式为 `{对象} {事件名} {事件变量}`
+- `server` (可选): 自定义信令服务器配置，不提供则使用 PeerJS 公共服务器
+  - `host`: 服务器地址
+  - `port`: 端口号
+  - `path`: 路径（如 `/peerjs`）
+  - `secure`: 是否使用 HTTPS/WSS
 
 ### `getPeerId(): string`
 

@@ -1,22 +1,29 @@
 import { test, expect } from '@playwright/test';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 test.describe('PeerJsWrapper E2E Tests', () => {
-  test('should send request and receive response (auto-unbox)', async ({ context }) => {
+  test('应该发送请求并接收响应（自动拆箱）', async ({ context }) => {
     const page1 = await context.newPage(); // 服务器端
     const page2 = await context.newPage(); // 客户端
 
-    // 加载测试页面
-    await page1.goto('file://' + join(__dirname, 'test-server.html'));
-    await page2.goto('file://' + join(__dirname, 'test-client.html'));
+    // 捕获控制台日志
+    page1.on('console', msg => console.log('[SERVER]', msg.text()));
+    page1.on('pageerror', err => console.log('[SERVER ERROR]', err.message));
+    page2.on('console', msg => console.log('[CLIENT]', msg.text()));
+    page2.on('pageerror', err => console.log('[CLIENT ERROR]', err.message));
+
+    // 加载测试页面（通过 HTTP 服务器）
+    await page1.goto('http://localhost:8080/e2e/test-server.html');
+    await page2.goto('http://localhost:8080/e2e/test-client.html');
 
     // 等待服务器端 Peer 准备就绪
     const serverPeerId = await page1.evaluate(() => {
       return new Promise<string>((resolve) => {
+        // 检查是否已经 ready
+        if ((window as any).peerReady && (window as any).peerId) {
+          resolve((window as any).peerId);
+          return;
+        }
+        // 否则等待回调
         (window as any).getServerPeerId = resolve;
       });
     });
@@ -36,75 +43,103 @@ test.describe('PeerJsWrapper E2E Tests', () => {
     expect(data.received).toEqual({ message: 'Hello from client' });
   });
 
-  test('should handle 404 when path not found', async ({ context }) => {
+  test('应该处理404路径未找到错误', async ({ context }) => {
     const page1 = await context.newPage(); // 服务器端
     const page2 = await context.newPage(); // 客户端
 
     // 加载测试页面
-    await page1.goto('file://' + join(__dirname, 'test-server.html'));
-    await page2.goto('file://' + join(__dirname, 'test-client.html'));
+    await page1.goto('http://localhost:8080/e2e/test-server.html');
+    await page2.goto('http://localhost:8080/e2e/test-client.html');
 
     // 等待服务器端 Peer 准备就绪
     const serverPeerId = await page1.evaluate(() => {
       return new Promise<string>((resolve) => {
+        // 检查是否已经 ready
+        if ((window as any).peerReady && (window as any).peerId) {
+          resolve((window as any).peerId);
+          return;
+        }
+        // 否则等待回调
         (window as any).getServerPeerId = resolve;
       });
     });
 
     console.log('Server Peer ID (404 test):', serverPeerId);
 
-    // 客户端发送到不存在的路径
-    const data = await page2.evaluate(async (args: { peerId: string; path: string }) => {
-      return await (window as any).sxPeerHttpUtil.send(args.peerId, args.path);
-    }, { peerId: serverPeerId, path: '/api/notfound' });
+    // 客户端发送到不存在的路径（应该抛出异常）
+    let errorMsg = '';
+    try {
+      await page2.evaluate(async (args: { peerId: string; path: string }) => {
+        return await (window as any).sxPeerHttpUtil.send(args.peerId, args.path);
+      }, { peerId: serverPeerId, path: '/api/notfound' });
+    } catch (err: any) {
+      errorMsg = err.message;
+    }
 
-    console.log('404 Response data:', data);
+    console.log('404 Error message:', errorMsg);
 
-    // 验证 404 响应数据
-    expect(data).toHaveProperty('error');
-    expect(data.error).toContain('Path not found');
+    // 验证 404 错误被正确抛出
+    expect(errorMsg).toContain('404');
+    expect(errorMsg).toContain('Path not found');
   });
 
-  test('should handle error from handler', async ({ context }) => {
+  test('应该处理处理器抛出的错误', async ({ context }) => {
     const page1 = await context.newPage(); // 服务器端
     const page2 = await context.newPage(); // 客户端
 
     // 加载测试页面
-    await page1.goto('file://' + join(__dirname, 'test-server.html'));
-    await page2.goto('file://' + join(__dirname, 'test-client.html'));
+    await page1.goto('http://localhost:8080/e2e/test-server.html');
+    await page2.goto('http://localhost:8080/e2e/test-client.html');
 
     // 等待服务器端 Peer 准备就绪
     const serverPeerId = await page1.evaluate(() => {
       return new Promise<string>((resolve) => {
+        // 检查是否已经 ready
+        if ((window as any).peerReady && (window as any).peerId) {
+          resolve((window as any).peerId);
+          return;
+        }
+        // 否则等待回调
         (window as any).getServerPeerId = resolve;
       });
     });
 
     console.log('Server Peer ID (error test):', serverPeerId);
 
-    // 客户端发送到会抛出错误的路径
-    const data = await page2.evaluate(async (args: { peerId: string; path: string }) => {
-      return await (window as any).sxPeerHttpUtil.send(args.peerId, args.path);
-    }, { peerId: serverPeerId, path: '/api/error' });
+    // 客户端发送到会抛出错误的路径（应该抛出异常）
+    let errorMsg = '';
+    try {
+      await page2.evaluate(async (args: { peerId: string; path: string }) => {
+        return await (window as any).sxPeerHttpUtil.send(args.peerId, args.path);
+      }, { peerId: serverPeerId, path: '/api/error' });
+    } catch (err: any) {
+      errorMsg = err.message;
+    }
 
-    console.log('Error Response data:', data);
+    console.log('Error message:', errorMsg);
 
-    // 验证错误处理
-    expect(data).toHaveProperty('error');
-    expect(data.error).toBe('Test error from server');
+    // 验证错误被正确抛出
+    expect(errorMsg).toContain('500');
+    expect(errorMsg).toContain('Test error from server');
   });
 
-  test('should echo data back', async ({ context }) => {
+  test('应该回显数据', async ({ context }) => {
     const page1 = await context.newPage(); // 服务器端
     const page2 = await context.newPage(); // 客户端
 
     // 加载测试页面
-    await page1.goto('file://' + join(__dirname, 'test-server.html'));
-    await page2.goto('file://' + join(__dirname, 'test-client.html'));
+    await page1.goto('http://localhost:8080/e2e/test-server.html');
+    await page2.goto('http://localhost:8080/e2e/test-client.html');
 
     // 等待服务器端 Peer 准备就绪
     const serverPeerId = await page1.evaluate(() => {
       return new Promise<string>((resolve) => {
+        // 检查是否已经 ready
+        if ((window as any).peerReady && (window as any).peerId) {
+          resolve((window as any).peerId);
+          return;
+        }
+        // 否则等待回调
         (window as any).getServerPeerId = resolve;
       });
     });
@@ -124,17 +159,23 @@ test.describe('PeerJsWrapper E2E Tests', () => {
     expect(data).toEqual(testData);
   });
 
-  test('should handle multiple concurrent requests', async ({ context }) => {
+  test('应该处理多个并发请求', async ({ context }) => {
     const page1 = await context.newPage(); // 服务器端
     const page2 = await context.newPage(); // 客户端
 
     // 加载测试页面
-    await page1.goto('file://' + join(__dirname, 'test-server.html'));
-    await page2.goto('file://' + join(__dirname, 'test-client.html'));
+    await page1.goto('http://localhost:8080/e2e/test-server.html');
+    await page2.goto('http://localhost:8080/e2e/test-client.html');
 
     // 等待服务器端 Peer 准备就绪
     const serverPeerId = await page1.evaluate(() => {
       return new Promise<string>((resolve) => {
+        // 检查是否已经 ready
+        if ((window as any).peerReady && (window as any).peerId) {
+          resolve((window as any).peerId);
+          return;
+        }
+        // 否则等待回调
         (window as any).getServerPeerId = resolve;
       });
     });
@@ -160,17 +201,23 @@ test.describe('PeerJsWrapper E2E Tests', () => {
     }
   });
 
-  test('should work without data parameter', async ({ context }) => {
+  test('应该支持不带数据参数的请求', async ({ context }) => {
     const page1 = await context.newPage(); // 服务器端
     const page2 = await context.newPage(); // 客户端
 
     // 加载测试页面
-    await page1.goto('file://' + join(__dirname, 'test-server.html'));
-    await page2.goto('file://' + join(__dirname, 'test-client.html'));
+    await page1.goto('http://localhost:8080/e2e/test-server.html');
+    await page2.goto('http://localhost:8080/e2e/test-client.html');
 
     // 等待服务器端 Peer 准备就绪
     const serverPeerId = await page1.evaluate(() => {
       return new Promise<string>((resolve) => {
+        // 检查是否已经 ready
+        if ((window as any).peerReady && (window as any).peerId) {
+          resolve((window as any).peerId);
+          return;
+        }
+        // 否则等待回调
         (window as any).getServerPeerId = resolve;
       });
     });
@@ -189,17 +236,23 @@ test.describe('PeerJsWrapper E2E Tests', () => {
     expect(data).toHaveProperty('received');
   });
 
-  test('should support registerHandler and unregisterHandler', async ({ context }) => {
+  test('应该支持注册和注销处理器', async ({ context }) => {
     const page1 = await context.newPage(); // 服务器端
     const page2 = await context.newPage(); // 客户端
 
     // 加载测试页面
-    await page1.goto('file://' + join(__dirname, 'test-server.html'));
-    await page2.goto('file://' + join(__dirname, 'test-client.html'));
+    await page1.goto('http://localhost:8080/e2e/test-server.html');
+    await page2.goto('http://localhost:8080/e2e/test-client.html');
 
     // 等待服务器端 Peer 准备就绪
     const serverPeerId = await page1.evaluate(() => {
       return new Promise<string>((resolve) => {
+        // 检查是否已经 ready
+        if ((window as any).peerReady && (window as any).peerId) {
+          resolve((window as any).peerId);
+          return;
+        }
+        // 否则等待回调
         (window as any).getServerPeerId = resolve;
       });
     });
@@ -232,13 +285,18 @@ test.describe('PeerJsWrapper E2E Tests', () => {
       }
     });
 
-    // 客户端再次发送请求，应该返回 404
-    const data2 = await page2.evaluate(async (args: { peerId: string; path: string; data: any }) => {
-      return await (window as any).sxPeerHttpUtil.send(args.peerId, args.path, args.data);
-    }, { peerId: serverPeerId, path: '/api/dynamic', data: { test: 'value' } });
+    // 客户端再次发送请求，应该抛出 404 异常
+    let errorMsg = '';
+    try {
+      await page2.evaluate(async (args: { peerId: string; path: string; data: any }) => {
+        return await (window as any).sxPeerHttpUtil.send(args.peerId, args.path, args.data);
+      }, { peerId: serverPeerId, path: '/api/dynamic', data: { test: 'value' } });
+    } catch (err: any) {
+      errorMsg = err.message;
+    }
 
-    console.log('After unregister response:', data2);
-    expect(data2).toHaveProperty('error');
-    expect(data2.error).toContain('Path not found');
+    console.log('After unregister error:', errorMsg);
+    expect(errorMsg).toContain('404');
+    expect(errorMsg).toContain('Path not found');
   });
 });

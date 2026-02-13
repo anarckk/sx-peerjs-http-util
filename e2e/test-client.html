@@ -4,21 +4,23 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PeerJS HTTP Client Test</title>
-  <script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
+  <script src="../dist/index.umd.js"></script>
 </head>
 <body>
   <h1>PeerJS HTTP Client</h1>
   <div id="status">Ready</div>
   <div id="log"></div>
 
-  <script type="module">
-    // 导入库
-    import { PeerJsWrapper } from '../dist/index.esm.js';
+  <script>
+    const serverConfig = {
+      host: 'localhost',
+      port: 9000,
+      path: '/peerjs',
+      secure: false
+    };
 
-    // 创建 wrapper 实例
-    const wrapper = new PeerJsWrapper();
+    const wrapper = new PeerJsHttpUtil.PeerJsWrapper(undefined, false, serverConfig);
 
-    // 导出到 window 以便测试脚本访问
     window.sxPeerHttpUtil = {
       wrapper,
       send: (peerId, path, data) => wrapper.send(peerId, path, data),

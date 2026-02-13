@@ -4,49 +4,43 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PeerJS HTTP Server Test</title>
-  <script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
+  <script src="../dist/index.umd.js"></script>
 </head>
 <body>
   <h1>PeerJS HTTP Server</h1>
   <div id="peer-id">Connecting...</div>
   <div id="log"></div>
 
-  <script type="module">
-    // 导入库
-    import { PeerJsWrapper } from '../dist/index.esm.js';
+  <script>
+    const serverConfig = {
+      host: 'localhost',
+      port: 9000,
+      path: '/peerjs',
+      secure: false
+    };
 
-    // 创建 wrapper 实例
-    const wrapper = new PeerJsWrapper();
+    const wrapper = new PeerJsHttpUtil.PeerJsWrapper(undefined, false, serverConfig);
 
-    // 使用 registerHandler 注册简化处理器（自动装箱）
     wrapper.registerHandler('/api/hello', (data) => {
-      return {
-        message: 'Hello from server',
-        received: data,
-      };
+      return { message: 'Hello from server', received: data };
     });
 
-    wrapper.registerHandler('/api/echo', (data) => {
-      // 直接返回数据，会自动装箱
-      return data;
-    });
+    wrapper.registerHandler('/api/echo', (data) => data);
 
     wrapper.registerHandler('/api/error', () => {
       throw new Error('Test error from server');
     });
 
-    // 导出到 window 以便测试脚本访问
     window.testWrapper = wrapper;
+    window.peerReady = false;
+    window.peerId = null;
 
     wrapper.whenReady().then(() => {
       const id = wrapper.getPeerId();
+      window.peerReady = true;
+      window.peerId = id;
       document.getElementById('peer-id').textContent = `Peer ID: ${id}`;
-
-      // 通知测试脚本 Peer ID 已准备好
-      if (window.getServerPeerId) {
-        window.getServerPeerId(id);
-      }
-
+      if (window.getServerPeerId) window.getServerPeerId(id);
       log('Peer connected with ID: ' + id);
     }).catch((err) => {
       log('Peer error: ' + err.message);
