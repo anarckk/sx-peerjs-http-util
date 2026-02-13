@@ -15,6 +15,7 @@ sx-peerjs-http-util/
 │   ├── index.esm.js - ES Module 格式 (NPM 引入)
 │   ├── index.umd.js - IIFE 格式 (CDN 引入，已内置 PeerJS)
 │   └── index.d.ts - TypeScript 类型声明
+├── chat.html - P2P 即时聊天工具，CDN 引入，支持多会话和消息持久化
 └── package.json - 项目配置
 ```
 
@@ -105,9 +106,9 @@ sx-peerjs-http-util/
 - **问题**：`file://` 协议不支持 ES 模块加载（CORS 限制）
 - **解决**：使用 `npx serve` 启动 HTTP 服务器，测试通过 HTTP 访问页面
 
-## 分析时间
+## 上次用户提示词分析时间
 
-2026-02-13 22:30
+2026-02-13 21:00
 
 ---
 
