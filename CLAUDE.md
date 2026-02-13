@@ -111,6 +111,12 @@ sx-peerjs-http-util/
 - **解决**：需要"隐藏但占位"时，使用 `opacity: 0/1` + `pointer-events: none/auto` 组合
 - **原则**：`display: none` 只在确实不需要占位时使用；需要保持布局稳定时用 `opacity` 或 `visibility`
 
+### 9. max-width 百分比与 display: inline-flex/table 的循环依赖
+- **问题**：子元素 `max-width: 70%` + 父元素 `display: inline-flex/table` 会导致文字逐字符换行
+- **原因**：`inline-flex`/`table` 的宽度由子内容决定，而子元素的 `max-width: %` 又依赖父元素宽度，形成循环依赖，浏览器计算出极小宽度
+- **解决**：在包裹容器（有明确父级宽度参考的元素）上直接设置 `max-width: %`，让子元素自然撑开
+- **原则**：`max-width` 百分比应设置在有**确定父级宽度**的元素上，不要设置在宽度由子内容决定的元素上
+
 ## 上次用户提示词分析时间
 
 2026-02-13 21:00
