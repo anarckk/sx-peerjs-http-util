@@ -30,7 +30,7 @@ sx-peerjs-http-util/
 - 此库专为浏览器设计，不是给 Node.js 后端环境使用
 
 ### API 设计
-- `new PeerJsWrapper(peerId?)` - 创建实例，可选传入 peerId，不传则自动生成 UUID
+- `new PeerJsWrapper(peerId?, isDebug?)` - 创建实例，可选传入 peerId（不传则自动生成 UUID），可选开启调试模式
 - `getPeerId()` - 同步方法，返回 `string`（不再是 Promise）
 - `whenReady()` - 等待连接就绪，返回 `Promise<void>`
 - `send(peerId, path, data)` - 发送请求到对端设备，返回 `Promise<unknown>`
@@ -44,7 +44,8 @@ sx-peerjs-http-util/
 - 处理器返回数据时自动装箱，send 函数返回时自动拆箱
 - 在 `conn.on('data')` 获得响应后，拆包之前要校验返回状态是否正确
 - **断线重连**：网络断开或连接失败时，每秒自动重连
-- Peer ID 由本地生成（UUID），不依赖服务器分配
+- Peer ID 由本地生成（使用 `crypto.randomUUID()`），不依赖服务器分配
+- **调试模式**：`isDebug=true` 时打印事件日志，格式为 `{对象} {事件名} {事件变量}`
 
 ### 发布信息
 - NPM 包名：`sx-peerjs-http-util`
@@ -75,7 +76,7 @@ sx-peerjs-http-util/
 
 ## 分析时间
 
-2026-02-13 20:50
+2026-02-13 21:10
 
 ---
 

@@ -13,11 +13,7 @@ interface InternalMessage {
  * 生成 UUID v4
  */
 function generateUUID(): string {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === 'x' ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
+  return crypto.randomUUID();
 }
 
 /**
@@ -79,12 +75,32 @@ export class PeerJsWrapper {
   private isDestroyed = false;
 
   /**
+   * 是否开启调试模式
+   */
+  private isDebug: boolean;
+
+  /**
    * 创建 PeerJsWrapper 实例
    * @param peerId 可选的 Peer ID，如果不提供则自动生成 UUID
+   * @param isDebug 是否开启调试模式，开启后会打印事件日志
    */
-  constructor(peerId?: string) {
+  constructor(peerId?: string, isDebug?: boolean) {
     this.myPeerId = peerId || generateUUID();
+    this.isDebug = isDebug ?? false;
     this.connect();
+  }
+
+  /**
+   * 调试日志输出
+   * @param obj 对象名
+   * @param event 事件名
+   * @param data 事件数据
+   */
+  private debugLog(obj: string, event: string, data?: unknown): void {
+    if (this.isDebug) {
+      const dataStr = data !== undefined ? (typeof data === 'object' ? JSON.stringify(data) : String(data)) : '';
+      console.log(`${obj} ${event} ${dataStr}`);
+    }
   }
 
   /**
@@ -104,7 +120,7 @@ export class PeerJsWrapper {
     if (!this.peerInstance) return;
 
     this.peerInstance.on('open', (id) => {
-      console.log(`[PeerJsWrapper] Connected to server with ID: ${id}`);
+      this.debugLog('Peer', 'open', id);
       // 清除重连定时器
       if (this.reconnectTimer) {
         clearTimeout(this.reconnectTimer);
@@ -113,12 +129,12 @@ export class PeerJsWrapper {
     });
 
     this.peerInstance.on('disconnected', () => {
-      console.log('[PeerJsWrapper] Disconnected from server, attempting to reconnect...');
+      this.debugLog('Peer', 'disconnected');
       this.scheduleReconnect();
     });
 
     this.peerInstance.on('error', (err) => {
-      console.error('[PeerJsWrapper] Peer error:', err.type, err.message);
+      this.debugLog('Peer', 'error', { type: err.type, message: err.message });
       // 网络相关错误时尝试重连
       if (
         err.type === 'network' ||
@@ -131,7 +147,7 @@ export class PeerJsWrapper {
     });
 
     this.peerInstance.on('close', () => {
-      console.log('[PeerJsWrapper] Peer connection closed');
+      this.debugLog('Peer', 'close');
     });
 
     // 设置传入连接处理器
@@ -157,7 +173,7 @@ export class PeerJsWrapper {
   private reconnect(): void {
     if (this.isDestroyed) return;
 
-    console.log('[PeerJsWrapper] Reconnecting...');
+    this.debugLog('PeerJsWrapper', 'reconnect');
 
     // 销毁旧实例
     if (this.peerInstance) {
@@ -230,6 +246,8 @@ export class PeerJsWrapper {
    */
   send(peerId: string, path: string, data?: unknown): Promise<unknown> {
     return new Promise((resolve, reject) => {
+      this.debugLog('PeerJsWrapper', 'send', { peerId, path, data });
+
       // 等待 peer 实例准备好
       this.waitForReady()
         .then(() => {
@@ -253,6 +271,7 @@ export class PeerJsWrapper {
           this.pendingRequests.set(requestId, { resolve, reject, timeout });
 
           conn.on('open', () => {
+            this.debugLog('Conn', 'open', peerId);
             const request: Request = { path, data };
             const message: InternalMessage = {
               type: 'request',
@@ -263,6 +282,7 @@ export class PeerJsWrapper {
           });
 
           conn.on('data', (responseData: unknown) => {
+            this.debugLog('Conn', 'data', { peer: peerId, data: responseData });
             const message = responseData as InternalMessage;
             if (message.type === 'response' && message.id === requestId) {
               const pending = this.pendingRequests.get(requestId);
@@ -286,6 +306,7 @@ export class PeerJsWrapper {
           });
 
           conn.on('error', (err) => {
+            this.debugLog('Conn', 'error', { peer: peerId, error: err });
             const pending = this.pendingRequests.get(requestId);
             if (pending) {
               clearTimeout(pending.timeout);
@@ -295,6 +316,7 @@ export class PeerJsWrapper {
           });
 
           conn.on('close', () => {
+            this.debugLog('Conn', 'close', peerId);
             const pending = this.pendingRequests.get(requestId);
             if (pending) {
               clearTimeout(pending.timeout);
@@ -316,9 +338,15 @@ export class PeerJsWrapper {
     if (!this.peerInstance) return;
 
     this.peerInstance.on('connection', (conn: DataConnection) => {
+      this.debugLog('Peer', 'connection', conn.peer);
       this.connections.add(conn);
 
+      conn.on('open', () => {
+        this.debugLog('Conn', 'open', conn.peer);
+      });
+
       conn.on('data', async (data: unknown) => {
+        this.debugLog('Conn', 'data', { peer: conn.peer, data });
         const message = data as InternalMessage;
 
         if (message.type === 'request' && message.request) {
@@ -348,10 +376,12 @@ export class PeerJsWrapper {
       });
 
       conn.on('close', () => {
+        this.debugLog('Conn', 'close', conn.peer);
         this.connections.delete(conn);
       });
 
-      conn.on('error', () => {
+      conn.on('error', (err) => {
+        this.debugLog('Conn', 'error', { peer: conn.peer, error: err });
         this.connections.delete(conn);
       });
     });
