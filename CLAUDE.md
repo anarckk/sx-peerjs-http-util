@@ -74,9 +74,28 @@ sx-peerjs-http-util/
   - 网络错误时 1 秒后自动重连
   - 重连时保持原有的 Peer ID（使用 myPeerId 存储）
 
+## 踩坑记录
+
+### 1. esbuild IIFE 格式不能有 external 依赖
+- **问题**：`external: ['peerjs']` 在 IIFE 格式下会生成 `require('peerjs')`，浏览器无法运行
+- **原因**：esbuild 对 IIFE 格式的 external 依赖使用 CommonJS require，而不是全局变量
+- **解决**：UMD/CDN 版本必须打包所有依赖，不能有 external
+
+### 2. ESM 项目中 .js 文件默认是 ES 模块
+- **问题**：`"type": "module"` 的项目里，build.js 使用 `require()` 语法报错
+- **解决**：改用 `import` 语法
+
+### 3. package.json exports 字段 types 必须放第一位
+- **问题**：esbuild 报警告，因为 types 在 import/require 后面会被忽略
+- **解决**：exports 中 types 放在最前面
+
+### 4. PeerJS 断线重连必须本地保存 ID
+- **问题**：PeerJS 默认由服务器分配 ID，断线重连后 ID 会变化
+- **解决**：构造时本地生成并保存 ID（myPeerId），重连时使用保存的 ID
+
 ## 分析时间
 
-2026-02-13 21:10
+2026-02-13 21:30
 
 ---
 
