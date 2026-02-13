@@ -106,6 +106,11 @@ sx-peerjs-http-util/
 - **问题**：`file://` 协议不支持 ES 模块加载（CORS 限制）
 - **解决**：使用 `npx serve` 启动 HTTP 服务器，测试通过 HTTP 访问页面
 
+### 8. CSS 隐藏元素导致布局抖动
+- **问题**：`display: none/block` 切换会让元素脱离/进入文档流，导致容器高度变化、布局抖动
+- **解决**：需要"隐藏但占位"时，使用 `opacity: 0/1` + `pointer-events: none/auto` 组合
+- **原则**：`display: none` 只在确实不需要占位时使用；需要保持布局稳定时用 `opacity` 或 `visibility`
+
 ## 上次用户提示词分析时间
 
 2026-02-13 21:00

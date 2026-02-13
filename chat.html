@@ -104,9 +104,10 @@
       color: #999;
       cursor: pointer;
       font-size: 18px;
-      display: none;
+      opacity: 0;
+      pointer-events: none;
     }
-    .contact-item:hover .delete-btn { display: block; }
+    .contact-item:hover .delete-btn { opacity: 1; pointer-events: auto; }
     .contact-item .delete-btn:hover { color: #e74c3c; }
     .chat-area {
       flex: 1;
@@ -343,7 +344,7 @@
     // 渲染联系人列表
     function renderContacts() {
       contactListEl.innerHTML = contacts.map(c => `
-        <div class="contact-item ${c.peerId === currentPeerId ? 'active' : ''}" data-peer="${c.peerId}">
+        <div class="contact-item${c.peerId === currentPeerId ? ' active' : ''}" data-peer="${c.peerId}">
           <span class="peer-id">${c.peerId.substring(0, 8)}...</span>
           <span class="delete-btn" data-delete="${c.peerId}">×</span>
         </div>
