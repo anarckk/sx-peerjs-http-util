@@ -124,13 +124,13 @@ sx-peerjs-http-util/
 
 # e2e测试用例
 
-- [x] should send request and receive response (auto-unbox)
-- [x] should handle 404 when path not found
-- [x] should handle error from handler
-- [x] should echo data back
-- [x] should handle multiple concurrent requests
-- [x] should work without data parameter
-- [x] should support registerHandler and unregisterHandler
+- [x] 应该发送请求并接收响应（自动拆箱）
+- [x] 应该处理404路径未找到错误
+- [x] 应该处理处理器抛出的错误
+- [x] 应该回显数据
+- [x] 应该处理多个并发请求
+- [x] 应该支持不带数据参数的请求
+- [x] 应该支持注册和注销处理器
 
 **运行方式**：
 1. 启动私有信令服务器：`cd peerjs-server && node server.js`
