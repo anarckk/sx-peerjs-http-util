@@ -8,117 +8,127 @@
 - 基于 PeerJS (WebRTC) 实现 P2P 通信
 - TypeScript 支持
 - 完整的 E2E 测试
+- **支持 NPM 和 CDN 两种引入方式**
+- **自动断线重连**
+- **可指定或自动生成 Peer ID**
 
 ## 安装
+
+### NPM 方式
 
 ```bash
 npm install sx-peerjs-http-util peerjs
 ```
 
-## API
+### CDN 方式
 
-### Request
-
-```typescript
-interface Request {
-  method?: string;
-  data?: unknown;
-}
+```html
+<!-- UMD 版本已内置 PeerJS，只需引入一个文件 -->
+<script src="https://unpkg.com/sx-peerjs-http-util/dist/index.umd.js"></script>
 ```
 
-### Response
+## 使用方式
+
+### PeerJsWrapper 类
 
 ```typescript
-interface Response {
-  status: number;
-  data: unknown;
-}
+import { PeerJsWrapper } from 'sx-peerjs-http-util';
+
+// 创建实例（不指定 ID 则自动生成 UUID）
+const wrapper = new PeerJsWrapper();
+
+// 或指定 Peer ID
+// const wrapper = new PeerJsWrapper('my-custom-id');
+
+// 等待连接就绪
+await wrapper.whenReady();
+
+// 获取 Peer ID（同步方法）
+const peerId = wrapper.getPeerId();
+console.log('My Peer ID:', peerId);
 ```
 
-### request(options: RequestOptions): Promise<Response>
-
-发送请求到指定 Peer。
+### 发送请求 (send)
 
 ```typescript
-import { request } from 'sx-peerjs-http-util';
+// 发送请求到对端设备
+const data = await wrapper.send('remote-peer-id', '/api/hello', { name: 'world' });
+console.log(data); // 直接输出响应数据（自动拆箱）
+```
 
-const response = await request({
-  peerId: 'remote-peer-id',
-  request: {
-    method: 'GET',
-    data: { message: 'Hello' },
-  },
+### 注册处理器 (registerHandler)
+
+```typescript
+// 服务端注册处理器
+wrapper.registerHandler('/api/hello', (data) => {
+  return { message: 'hello', received: data }; // 直接返回数据，自动装箱
 });
 
-console.log(response.status); // 200
-console.log(response.data); // { message: 'Response from server' }
+// 注销处理器
+wrapper.unregisterHandler('/api/hello');
 ```
 
-### createServer(peer: Peer, handler: RequestHandler): () => void
-
-创建一个 PeerJS HTTP 服务器。
+### 销毁实例 (destroy)
 
 ```typescript
-import { createServer } from 'sx-peerjs-http-util';
-import { Peer } from 'peerjs';
-
-const peer = new Peer();
-
-const handler = async (request) => {
-  return {
-    status: 200,
-    data: {
-      message: 'Hello from server',
-      received: request.data,
-    },
-  };
-};
-
-const cleanup = createServer(peer, handler);
-
-// 清理时调用
-cleanup();
+wrapper.destroy();
 ```
 
 ## 完整示例
 
-### 服务器端
+### NPM 方式 - 服务器端
 
 ```html
 <!DOCTYPE html>
 <html>
 <head>
   <script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
-  <script type="module">
-    import { createServer } from './dist/index.js';
-
-    const peer = new Peer();
-
-    peer.on('open', (id) => {
-      console.log('My Peer ID:', id);
-    });
-
-    const handler = async (request) => {
-      // 处理请求
-      if (request.method === 'ECHO') {
-        return {
-          status: 200,
-          data: request.data,
-        };
-      }
-
-      return {
-        status: 200,
-        data: { message: 'OK' },
-      };
-    };
-
-    createServer(peer, handler);
-  </script>
 </head>
 <body>
   <h1>Server</h1>
   <div id="peer-id"></div>
+
+  <script type="module">
+    import { PeerJsWrapper } from 'https://unpkg.com/sx-peerjs-http-util/dist/index.esm.js';
+
+    const wrapper = new PeerJsWrapper();
+
+    wrapper.registerHandler('/api/hello', (data) => {
+      return { message: 'Hello from server', received: data };
+    });
+
+    wrapper.whenReady().then(() => {
+      document.getElementById('peer-id').textContent = `Peer ID: ${wrapper.getPeerId()}`;
+    });
+  </script>
+</body>
+</html>
+```
+
+### CDN 方式 - 服务器端
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <!-- CDN 版本已内置 PeerJS -->
+  <script src="https://unpkg.com/sx-peerjs-http-util/dist/index.umd.js"></script>
+</head>
+<body>
+  <h1>Server</h1>
+  <div id="peer-id"></div>
+
+  <script>
+    const wrapper = new PeerJsHttpUtil.PeerJsWrapper();
+
+    wrapper.registerHandler('/api/hello', (data) => {
+      return { message: 'Hello from server', received: data };
+    });
+
+    wrapper.whenReady().then(() => {
+      document.getElementById('peer-id').textContent = `Peer ID: ${wrapper.getPeerId()}`;
+    });
+  </script>
 </body>
 </html>
 ```
@@ -129,36 +139,69 @@ cleanup();
 <!DOCTYPE html>
 <html>
 <head>
-  <script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
-  <script type="module">
-    import { request } from './dist/index.js';
-
-    async function sendRequest() {
-      const response = await request({
-        peerId: 'server-peer-id',
-        request: {
-          method: 'ECHO',
-          data: { test: 'data' },
-        },
-      });
-
-      console.log('Response:', response);
-    }
-
-    // 调用
-    sendRequest();
-  </script>
+  <script src="https://unpkg.com/sx-peerjs-http-util/dist/index.umd.js"></script>
 </head>
 <body>
   <h1>Client</h1>
   <button onclick="sendRequest()">Send Request</button>
+
+  <script>
+    const wrapper = new PeerJsHttpUtil.PeerJsWrapper();
+
+    async function sendRequest() {
+      try {
+        const data = await wrapper.send('server-peer-id', '/api/hello', { test: 'data' });
+        console.log('Response:', data);
+      } catch (err) {
+        console.error('Error:', err.message);
+      }
+    }
+  </script>
 </body>
 </html>
 ```
 
-## E2E 测试
+## API 参考
 
-运行端到端测试：
+### `new PeerJsWrapper(peerId?: string)`
+
+创建 PeerJsWrapper 实例。
+
+- `peerId` (可选): 指定 Peer ID，不提供则自动生成 UUID
+
+### `getPeerId(): string`
+
+获取当前 Peer ID（同步方法，立即返回）。
+
+### `whenReady(): Promise<void>`
+
+等待 Peer 连接到信令服务器。
+
+### `send(peerId: string, path: string, data?: unknown): Promise<unknown>`
+
+发送请求到指定 Peer。
+
+- `peerId`: 对端设备 ID
+- `path`: 请求路径
+- `data`: 请求数据 (可选)
+- 返回: 响应数据（自动拆箱，只返回 data 部分）
+
+### `registerHandler(path: string, handler: SimpleHandler): void`
+
+注册路径处理器。
+
+- `path`: 请求路径
+- `handler`: 处理器函数，接收请求数据，返回响应数据
+
+### `unregisterHandler(path: string): void`
+
+注销路径处理器。
+
+### `destroy(): void`
+
+关闭所有连接并销毁实例。
+
+## E2E 测试
 
 ```bash
 npm run test:e2e
@@ -170,3 +213,11 @@ npm run test:e2e
 - 请求超时时间为 30 秒
 - 此库仅用于浏览器环境
 - 需要使用 PeerJS 信令服务器（默认使用公共服务器）
+- CDN 版本 (UMD) 已内置 PeerJS，无需额外引入
+- NPM 版本需要单独安装 peerjs 依赖
+- **自动断线重连**：网络断开时会自动尝试重连（每秒重试一次）
+
+## 发布
+
+- NPM: https://www.npmjs.com/package/sx-peerjs-http-util
+- CDN: https://unpkg.com/sx-peerjs-http-util/dist/index.umd.js

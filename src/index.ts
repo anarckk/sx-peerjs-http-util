@@ -10,6 +10,17 @@ interface InternalMessage {
 }
 
 /**
+ * 生成 UUID v4
+ */
+function generateUUID(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+/**
  * PeerJsWrapper - 封装 PeerJS 为类似 HTTP 的 API
  *
  * @example
@@ -25,40 +36,188 @@ interface InternalMessage {
  * ```
  */
 export class PeerJsWrapper {
-  private peerInstance: Peer;
-  private connections = new Set<DataConnection>();
-  private pendingRequests = new Map<string, {
-    resolve: (data: unknown) => void;
-    reject: (error: Error) => void;
-    timeout: NodeJS.Timeout;
-  }>();
+  /**
+   * 本地 Peer ID，构造时确定（传入或自动生成）
+   */
+  private myPeerId: string;
 
   /**
-   * 处理传入请求
+   * PeerJS 实例
+   */
+  private peerInstance: Peer | null = null;
+
+  /**
+   * 当前活跃的传入连接集合
+   */
+  private connections = new Set<DataConnection>();
+
+  /**
+   * 待处理的请求映射表（用于请求-响应匹配）
+   */
+  private pendingRequests = new Map<
+    string,
+    {
+      resolve: (data: unknown) => void;
+      reject: (error: Error) => void;
+      timeout: ReturnType<typeof setTimeout>;
+    }
+  >();
+
+  /**
+   * 路径处理器映射表
    */
   private simpleHandlers = new Map<string, SimpleHandler>();
 
   /**
+   * 重连定时器
+   */
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /**
+   * 是否已销毁
+   */
+  private isDestroyed = false;
+
+  /**
    * 创建 PeerJsWrapper 实例
-   * @param peerId 可选的 Peer ID，如果不提供则由 PeerJS 服务器自动生成
+   * @param peerId 可选的 Peer ID，如果不提供则自动生成 UUID
    */
   constructor(peerId?: string) {
-    this.peerInstance = peerId ? new Peer(peerId) : new Peer();
+    this.myPeerId = peerId || generateUUID();
+    this.connect();
+  }
+
+  /**
+   * 连接到 PeerJS 服务器
+   */
+  private connect(): void {
+    if (this.isDestroyed) return;
+
+    this.peerInstance = new Peer(this.myPeerId);
+    this.setupPeerEventHandlers();
+  }
+
+  /**
+   * 设置 Peer 实例的事件处理器
+   */
+  private setupPeerEventHandlers(): void {
+    if (!this.peerInstance) return;
+
+    this.peerInstance.on('open', (id) => {
+      console.log(`[PeerJsWrapper] Connected to server with ID: ${id}`);
+      // 清除重连定时器
+      if (this.reconnectTimer) {
+        clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = null;
+      }
+    });
+
+    this.peerInstance.on('disconnected', () => {
+      console.log('[PeerJsWrapper] Disconnected from server, attempting to reconnect...');
+      this.scheduleReconnect();
+    });
+
+    this.peerInstance.on('error', (err) => {
+      console.error('[PeerJsWrapper] Peer error:', err.type, err.message);
+      // 网络相关错误时尝试重连
+      if (
+        err.type === 'network' ||
+        err.type === 'server-error' ||
+        err.type === 'socket-error' ||
+        err.type === 'socket-closed'
+      ) {
+        this.scheduleReconnect();
+      }
+    });
+
+    this.peerInstance.on('close', () => {
+      console.log('[PeerJsWrapper] Peer connection closed');
+    });
+
+    // 设置传入连接处理器
     this.setupIncomingConnectionHandler();
   }
 
   /**
-   * 获取当前 Peer ID
-   * @returns Promise<string> 当 Peer 准备好时返回 Peer ID
+   * 安排重连
    */
-  getPeerId(): Promise<string> {
-    return new Promise((resolve, reject) => {
-      if (this.peerInstance.id) {
-        resolve(this.peerInstance.id);
-      } else {
-        this.peerInstance.on('open', (id) => resolve(id));
-        this.peerInstance.on('error', (err) => reject(err));
+  private scheduleReconnect(): void {
+    if (this.isDestroyed) return;
+    if (this.reconnectTimer) return; // 已有重连任务在等待
+
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.reconnect();
+    }, 1000);
+  }
+
+  /**
+   * 执行重连
+   */
+  private reconnect(): void {
+    if (this.isDestroyed) return;
+
+    console.log('[PeerJsWrapper] Reconnecting...');
+
+    // 销毁旧实例
+    if (this.peerInstance) {
+      try {
+        this.peerInstance.destroy();
+      } catch {
+        // 忽略销毁时的错误
       }
+      this.peerInstance = null;
+    }
+
+    // 重新连接
+    this.connect();
+  }
+
+  /**
+   * 获取当前 Peer ID
+   * @returns string 当前 Peer ID
+   */
+  getPeerId(): string {
+    return this.myPeerId;
+  }
+
+  /**
+   * 等待 Peer 连接就绪（连接到信令服务器）
+   * @returns Promise<void> 当连接成功时 resolve
+   */
+  whenReady(): Promise<void> {
+    return this.waitForReady();
+  }
+
+  /**
+   * 等待 Peer 连接就绪
+   */
+  private waitForReady(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (!this.peerInstance) {
+        reject(new Error('Peer instance not initialized'));
+        return;
+      }
+
+      if (this.peerInstance.open) {
+        resolve();
+        return;
+      }
+
+      const onOpen = () => {
+        this.peerInstance?.off('open', onOpen);
+        this.peerInstance?.off('error', onError);
+        resolve();
+      };
+
+      const onError = (err: Error) => {
+        this.peerInstance?.off('open', onOpen);
+        this.peerInstance?.off('error', onError);
+        reject(err);
+      };
+
+      this.peerInstance.on('open', onOpen);
+      this.peerInstance.on('error', onError);
     });
   }
 
@@ -72,72 +231,81 @@ export class PeerJsWrapper {
   send(peerId: string, path: string, data?: unknown): Promise<unknown> {
     return new Promise((resolve, reject) => {
       // 等待 peer 实例准备好
-      this.getPeerId().then(() => {
-        // 每次发送消息时，都连接一个新的 conn
-        const conn = this.peerInstance.connect(peerId, {
-          reliable: true,
-        });
+      this.waitForReady()
+        .then(() => {
+          if (!this.peerInstance) {
+            reject(new Error('Peer instance not available'));
+            return;
+          }
 
-        const timeout = setTimeout(() => {
-          conn.close();
-          this.pendingRequests.delete(requestId);
-          reject(new Error(`Request timeout: ${peerId}${path}`));
-        }, 30000);
+          // 每次发送消息时，都连接一个新的 conn
+          const conn = this.peerInstance.connect(peerId, {
+            reliable: true,
+          });
 
-        const requestId = `${this.peerInstance.id}-${Date.now()}-${Math.random()}`;
-        this.pendingRequests.set(requestId, { resolve, reject, timeout });
+          const timeout = setTimeout(() => {
+            conn.close();
+            this.pendingRequests.delete(requestId);
+            reject(new Error(`Request timeout: ${peerId}${path}`));
+          }, 30000);
 
-        conn.on('open', () => {
-          const request: Request = { path, data };
-          const message: InternalMessage = {
-            type: 'request',
-            id: requestId,
-            request,
-          };
-          conn.send(message);
-        });
+          const requestId = `${this.myPeerId}-${Date.now()}-${Math.random()}`;
+          this.pendingRequests.set(requestId, { resolve, reject, timeout });
 
-        conn.on('data', (data: unknown) => {
-          const message = data as InternalMessage;
-          if (message.type === 'response' && message.id === requestId) {
+          conn.on('open', () => {
+            const request: Request = { path, data };
+            const message: InternalMessage = {
+              type: 'request',
+              id: requestId,
+              request,
+            };
+            conn.send(message);
+          });
+
+          conn.on('data', (responseData: unknown) => {
+            const message = responseData as InternalMessage;
+            if (message.type === 'response' && message.id === requestId) {
+              const pending = this.pendingRequests.get(requestId);
+              if (pending) {
+                clearTimeout(pending.timeout);
+                this.pendingRequests.delete(requestId);
+
+                const response = message.response!;
+                // 校验状态码，非 2xx 则 reject
+                if (response.status < 200 || response.status >= 300) {
+                  pending.reject(
+                    new Error(`Request failed: ${response.status} ${JSON.stringify(response.data)}`)
+                  );
+                } else {
+                  // 自动拆箱：只返回 data 部分
+                  pending.resolve(response.data);
+                }
+              }
+              conn.close();
+            }
+          });
+
+          conn.on('error', (err) => {
             const pending = this.pendingRequests.get(requestId);
             if (pending) {
               clearTimeout(pending.timeout);
               this.pendingRequests.delete(requestId);
-
-              const response = message.response!;
-              // 校验状态码，非 2xx 则 reject
-              if (response.status < 200 || response.status >= 300) {
-                pending.reject(new Error(`Request failed: ${response.status} ${JSON.stringify(response.data)}`));
-              } else {
-                // 自动拆箱：只返回 data 部分
-                pending.resolve(response.data);
-              }
+              pending.reject(err as Error);
             }
-            conn.close();
-          }
-        });
+          });
 
-        conn.on('error', (err) => {
-          const pending = this.pendingRequests.get(requestId);
-          if (pending) {
-            clearTimeout(pending.timeout);
-            this.pendingRequests.delete(requestId);
-            pending.reject(err as Error);
-          }
+          conn.on('close', () => {
+            const pending = this.pendingRequests.get(requestId);
+            if (pending) {
+              clearTimeout(pending.timeout);
+              this.pendingRequests.delete(requestId);
+              pending.reject(new Error('Connection closed'));
+            }
+          });
+        })
+        .catch((err) => {
+          reject(err);
         });
-
-        conn.on('close', () => {
-          const pending = this.pendingRequests.get(requestId);
-          if (pending) {
-            clearTimeout(pending.timeout);
-            this.pendingRequests.delete(requestId);
-            pending.reject(new Error('Connection closed'));
-          }
-        });
-      }).catch((err) => {
-        reject(err);
-      });
     });
   }
 
@@ -145,6 +313,8 @@ export class PeerJsWrapper {
    * 设置传入连接处理器
    */
   private setupIncomingConnectionHandler(): void {
+    if (!this.peerInstance) return;
+
     this.peerInstance.on('connection', (conn: DataConnection) => {
       this.connections.add(conn);
 
@@ -226,6 +396,14 @@ export class PeerJsWrapper {
    * 关闭所有连接并销毁 Peer 实例
    */
   destroy(): void {
+    this.isDestroyed = true;
+
+    // 清除重连定时器
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
     for (const conn of this.connections.values()) {
       conn.close();
     }
@@ -238,7 +416,10 @@ export class PeerJsWrapper {
     this.pendingRequests.clear();
     this.simpleHandlers.clear();
 
-    this.peerInstance.destroy();
+    if (this.peerInstance) {
+      this.peerInstance.destroy();
+      this.peerInstance = null;
+    }
   }
 }
 

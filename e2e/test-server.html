@@ -13,7 +13,7 @@
 
   <script type="module">
     // 导入库
-    import { PeerJsWrapper } from '../dist/index.js';
+    import { PeerJsWrapper } from '../dist/index.esm.js';
 
     // 创建 wrapper 实例
     const wrapper = new PeerJsWrapper();
@@ -38,7 +38,8 @@
     // 导出到 window 以便测试脚本访问
     window.testWrapper = wrapper;
 
-    wrapper.getPeerId().then((id) => {
+    wrapper.whenReady().then(() => {
+      const id = wrapper.getPeerId();
       document.getElementById('peer-id').textContent = `Peer ID: ${id}`;
 
       // 通知测试脚本 Peer ID 已准备好

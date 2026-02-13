@@ -13,7 +13,7 @@
 
   <script type="module">
     // 导入库
-    import { PeerJsWrapper } from '../dist/index.js';
+    import { PeerJsWrapper } from '../dist/index.esm.js';
 
     // 创建 wrapper 实例
     const wrapper = new PeerJsWrapper();
@@ -24,7 +24,8 @@
       send: (peerId, path, data) => wrapper.send(peerId, path, data),
     };
 
-    wrapper.getPeerId().then((id) => {
+    wrapper.whenReady().then(() => {
+      const id = wrapper.getPeerId();
       log('Client connected with ID: ' + id);
       document.getElementById('status').textContent = 'Client ready, Peer ID: ' + id;
     }).catch((err) => {

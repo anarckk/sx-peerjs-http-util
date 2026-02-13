@@ -2,11 +2,23 @@
   "name": "sx-peerjs-http-util",
   "version": "1.0.1",
   "description": "A browser library that wraps PeerJS with a simple HTTP-like API",
-  "main": "dist/index.js",
+  "main": "dist/index.esm.js",
+  "module": "dist/index.esm.js",
   "types": "dist/index.d.ts",
   "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.esm.js",
+      "require": "./dist/index.umd.js",
+      "default": "./dist/index.esm.js"
+    }
+  },
+  "browser": "dist/index.umd.js",
+  "unpkg": "dist/index.umd.js",
+  "jsdelivr": "dist/index.umd.js",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc --emitDeclarationOnly && node scripts/build.js",
     "test:e2e": "playwright test",
     "prepare": "npm run build"
   },
@@ -16,7 +28,8 @@
     "p2p",
     "http",
     "browser",
-    "e2e"
+    "e2e",
+    "cdn"
   ],
   "author": "",
   "license": "ISC",
@@ -29,6 +42,7 @@
   "devDependencies": {
     "@playwright/test": "^1.50.0",
     "@types/node": "^22.14.0",
+    "esbuild": "^0.27.3",
     "typescript": "^5.8.3"
   }
 }
