@@ -121,19 +121,28 @@
 
     // 通话建立
     function onCallConnected() {
-      statusEl.textContent = '通话中';
       callUIEl.style.display = 'block';
       callBtn.disabled = true;
 
-      // 播放远程音频
+      // 播放远程音频（可能还没到达，在状态变化时再获取）
       const remoteStream = currentSession.getRemoteStream();
       if (remoteStream) {
         remoteAudio.srcObject = remoteStream;
+        statusEl.textContent = '通话中';
+      } else {
+        statusEl.textContent = '连接中...';
       }
 
-      // 监听通话结束
+      // 监听状态变化
       currentSession.onStateChange((state) => {
-        if (state === 'ended') {
+        if (state === 'connected') {
+          // 远程流到达
+          const stream = currentSession.getRemoteStream();
+          if (stream) {
+            remoteAudio.srcObject = stream;
+          }
+          statusEl.textContent = '通话中';
+        } else if (state === 'ended') {
           onCallEnded();
         }
       });

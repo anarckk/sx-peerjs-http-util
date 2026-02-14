@@ -129,7 +129,6 @@
 
     // 通话建立
     function onCallConnected() {
-      statusEl.textContent = '通话中';
       callUIEl.style.display = 'block';
       callBtn.disabled = true;
 
@@ -139,15 +138,25 @@
         localVideo.srcObject = localStream;
       }
 
-      // 显示远程视频
+      // 显示远程视频（可能还没到达，在状态变化时再获取）
       const remoteStream = currentSession.getRemoteStream();
       if (remoteStream) {
         remoteVideo.srcObject = remoteStream;
+        statusEl.textContent = '通话中';
+      } else {
+        statusEl.textContent = '连接中...';
       }
 
-      // 监听通话结束
+      // 监听状态变化
       currentSession.onStateChange((state) => {
-        if (state === 'ended') {
+        if (state === 'connected') {
+          // 远程流到达
+          const stream = currentSession.getRemoteStream();
+          if (stream) {
+            remoteVideo.srcObject = stream;
+          }
+          statusEl.textContent = '通话中';
+        } else if (state === 'ended') {
           onCallEnded();
         }
       });
