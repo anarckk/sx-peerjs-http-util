@@ -404,11 +404,185 @@
       display: none;
     }
     .overlay-bg.active { display: block; }
+
+    /* ============== 响应式适配 ============== */
+
+    /* 返回按钮（默认隐藏，手机端显示） */
+    .back-btn {
+      display: none;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 8px;
+      margin-right: 8px;
+    }
+    .back-btn svg {
+      width: 20px;
+      height: 20px;
+      fill: white;
+    }
+
+    /* 手机端适配（< 768px） */
+    @media (max-width: 767px) {
+      .header {
+        padding: 10px 12px;
+      }
+      .header > div:first-child {
+        display: flex;
+        align-items: center;
+      }
+      .back-btn {
+        display: block;
+      }
+      .header .my-id {
+        font-size: 11px;
+      }
+      .header .my-id span {
+        font-size: 10px;
+        padding: 2px 6px;
+      }
+
+      .main {
+        position: relative;
+      }
+
+      /* 侧边栏在手机端默认隐藏，占满屏幕 */
+      .sidebar {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        width: 100%;
+        z-index: 100;
+        transform: translateX(-100%);
+        transition: transform 0.3s ease;
+      }
+      .sidebar.active {
+        transform: translateX(0);
+      }
+
+      /* 聊天区域占满 */
+      .chat-area {
+        width: 100%;
+      }
+
+      .chat-header {
+        padding: 12px;
+        font-size: 13px;
+        display: flex;
+        align-items: center;
+      }
+      .chat-header > span {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .messages {
+        padding: 12px;
+      }
+      .message > div {
+        max-width: 85%;
+      }
+      .message .bubble {
+        padding: 8px 12px;
+        font-size: 14px;
+      }
+
+      .input-area {
+        padding: 10px 12px;
+      }
+      .input-area input {
+        padding: 10px;
+        font-size: 16px; /* 防止 iOS 缩放 */
+      }
+      .input-area button {
+        padding: 10px 16px;
+        font-size: 14px;
+      }
+
+      /* 通话按钮增大触摸区域 */
+      .call-btn {
+        padding: 10px;
+      }
+      .call-btn svg {
+        width: 24px;
+        height: 24px;
+      }
+
+      /* 通话界面适配 */
+      .call-overlay.connected {
+        padding-top: 10px;
+      }
+      .remote-video {
+        max-height: 50vh;
+        border-radius: 8px;
+      }
+      .local-video {
+        width: 100px;
+        height: 75px;
+        bottom: 10px;
+        right: 10px;
+        border-radius: 6px;
+      }
+      .call-controls {
+        margin-top: 15px;
+        gap: 20px;
+      }
+      .call-controls button {
+        width: 56px;
+        height: 56px;
+      }
+
+      /* 来电模态框适配 */
+      .incoming-call-modal {
+        width: 90%;
+        max-width: 320px;
+        padding: 24px 20px;
+      }
+      .incoming-call-actions button {
+        width: 64px;
+        height: 64px;
+      }
+
+      /* 状态栏 */
+      .status {
+        font-size: 11px;
+        padding: 6px 12px;
+      }
+
+      /* 联系人项 */
+      .contact-item {
+        padding: 12px 14px;
+      }
+      .contact-item .delete-btn {
+        opacity: 1;
+        pointer-events: auto;
+      }
+    }
+
+    /* 平板适配（768px - 1024px） */
+    @media (min-width: 768px) and (max-width: 1024px) {
+      .sidebar {
+        width: 220px;
+      }
+      .local-video {
+        width: 120px;
+        height: 90px;
+      }
+    }
   </style>
 </head>
 <body>
   <div class="header">
-    <div style="font-size: 18px; font-weight: 500;">P2P Chat</div>
+    <div style="font-size: 18px; font-weight: 500; display: flex; align-items: center;">
+      <button class="back-btn" id="backBtn" title="Back to contacts">
+        <svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+      </button>
+      P2P Chat
+    </div>
     <div class="my-id">My ID: <span id="myPeerId" title="Click to copy">Loading...</span></div>
   </div>
   <div id="status" class="status">Connecting...</div>

@@ -119,6 +119,12 @@ async function selectContact(peerId) {
   currentPeerId = peerId;
   renderContacts();
   await renderChatArea();
+
+  // 手机端：选中联系人后隐藏侧边栏
+  const sidebar = document.querySelector('.sidebar');
+  if (sidebar && window.innerWidth < 768) {
+    sidebar.classList.remove('active');
+  }
 }
 
 /**
@@ -476,6 +482,14 @@ async function init() {
       addContact(newPeerIdInput.value);
       newPeerIdInput.value = '';
     }
+  });
+
+  // 手机端返回按钮
+  const backBtn = document.getElementById('backBtn');
+  const sidebar = document.querySelector('.sidebar');
+
+  backBtn.addEventListener('click', () => {
+    sidebar.classList.toggle('active');
   });
 
   // 注册来电监听器
