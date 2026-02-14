@@ -211,6 +211,199 @@
     }
     .status.connected { background: #d4edda; color: #155724; }
     .status.error { background: #f8d7da; color: #721c24; }
+
+    /* 通话按钮样式 */
+    .call-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .call-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 6px;
+      border-radius: 50%;
+      transition: background 0.2s;
+    }
+    .call-btn:hover { background: rgba(0,0,0,0.1); }
+    .call-btn svg { width: 20px; height: 20px; }
+    .call-btn.voice svg { fill: #4a90d9; }
+    .call-btn.video svg { fill: #4a90d9; }
+    .call-btn.hangup svg { fill: #e74c3c; }
+
+    /* 通话界面 */
+    .call-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: #1a1a1a;
+      z-index: 1000;
+      display: none;
+      flex-direction: column;
+    }
+    .call-overlay.active { display: flex; }
+    .call-overlay.calling {
+      align-items: center;
+      justify-content: center;
+    }
+    .call-overlay.connected {
+      align-items: center;
+      justify-content: flex-start;
+      padding-top: 20px;
+    }
+
+    .call-status {
+      color: white;
+      font-size: 18px;
+      margin-bottom: 20px;
+    }
+    .call-peer-id {
+      color: #888;
+      font-size: 14px;
+      font-family: monospace;
+    }
+
+    .call-video-container {
+      position: relative;
+      width: 100%;
+      max-width: 800px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .remote-video {
+      width: 100%;
+      max-height: 60vh;
+      background: #000;
+      border-radius: 12px;
+    }
+
+    .local-video {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      width: 150px;
+      height: 112px;
+      background: #333;
+      border-radius: 8px;
+      object-fit: cover;
+    }
+
+    .audio-only-indicator {
+      width: 120px;
+      height: 120px;
+      background: #333;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 20px;
+    }
+    .audio-only-indicator svg {
+      width: 60px;
+      height: 60px;
+      fill: #4a90d9;
+    }
+
+    .call-controls {
+      display: flex;
+      gap: 16px;
+      margin-top: 20px;
+    }
+    .call-controls button {
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.1s;
+    }
+    .call-controls button:hover { transform: scale(1.1); }
+    .call-controls button.mute {
+      background: #555;
+    }
+    .call-controls button.mute.active {
+      background: #e74c3c;
+    }
+    .call-controls button.mute svg { fill: white; width: 24px; height: 24px; }
+    .call-controls button.hangup {
+      background: #e74c3c;
+    }
+    .call-controls button.hangup svg { fill: white; width: 24px; height: 24px; }
+
+    /* 来电提示 */
+    .incoming-call-modal {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: white;
+      padding: 30px;
+      border-radius: 16px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+      z-index: 2000;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      min-width: 280px;
+    }
+    .incoming-call-modal.active { display: flex; }
+    .incoming-call-modal h3 {
+      margin: 0 0 8px 0;
+      font-size: 18px;
+    }
+    .incoming-call-modal .caller-id {
+      font-family: monospace;
+      color: #666;
+      font-size: 13px;
+      margin-bottom: 20px;
+    }
+    .incoming-call-modal .call-type {
+      color: #4a90d9;
+      font-size: 14px;
+      margin-bottom: 20px;
+    }
+    .incoming-call-actions {
+      display: flex;
+      gap: 20px;
+    }
+    .incoming-call-actions button {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .incoming-call-actions button.accept {
+      background: #27ae60;
+    }
+    .incoming-call-actions button.accept svg { fill: white; width: 28px; height: 28px; }
+    .incoming-call-actions button.reject {
+      background: #e74c3c;
+    }
+    .incoming-call-actions button.reject svg { fill: white; width: 28px; height: 28px; }
+
+    .overlay-bg {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 1999;
+      display: none;
+    }
+    .overlay-bg.active { display: block; }
   </style>
 </head>
 <body>
@@ -228,6 +421,48 @@
     </div>
     <div class="chat-area" id="chatArea">
       <div class="empty-state">Select a contact to start chatting</div>
+    </div>
+  </div>
+
+  <!-- 通话界面 -->
+  <div class="call-overlay" id="callOverlay">
+    <div class="call-video-container">
+      <div class="call-status" id="callStatus">Calling...</div>
+      <div class="call-peer-id" id="callPeerId"></div>
+
+      <!-- 视频通话时显示 -->
+      <video class="remote-video" id="remoteVideo" autoplay playsinline></video>
+      <video class="local-video" id="localVideo" autoplay playsinline muted></video>
+
+      <!-- 语音通话时显示 -->
+      <div class="audio-only-indicator" id="audioOnlyIndicator" style="display:none;">
+        <svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.91-3c-.49 0-.9.36-.98.85C16.52 14.2 14.47 16 12 16s-4.52-1.8-4.93-4.15c-.08-.49-.49-.85-.98-.85-.61 0-1.09.54-1 1.14.49 3 2.89 5.35 5.91 5.78V20c0 .55.45 1 1 1s1-.45 1-1v-2.08c3.02-.43 5.42-2.78 5.91-5.78.1-.6-.39-1.14-1-1.14z"/></svg>
+      </div>
+
+      <div class="call-controls">
+        <button class="mute" id="muteBtn" title="Mute">
+          <svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.91-3c-.49 0-.9.36-.98.85C16.52 14.2 14.47 16 12 16s-4.52-1.8-4.93-4.15c-.08-.49-.49-.85-.98-.85-.61 0-1.09.54-1 1.14.49 3 2.89 5.35 5.91 5.78V20c0 .55.45 1 1 1s1-.45 1-1v-2.08c3.02-.43 5.42-2.78 5.91-5.78.1-.6-.39-1.14-1-1.14z"/></svg>
+        </button>
+        <button class="hangup" id="hangupBtn" title="Hang Up">
+          <svg viewBox="0 0 24 24"><path d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85-.18.18-.43.28-.7.28-.28 0-.53-.11-.71-.29L.29 13.08c-.18-.17-.29-.42-.29-.7 0-.28.11-.53.29-.71C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67c.18.18.29.43.29.71 0 .28-.11.53-.29.71l-2.48 2.48c-.18.18-.43.29-.71.29-.27 0-.52-.11-.7-.28-.79-.74-1.69-1.36-2.67-1.85-.33-.16-.56-.5-.56-.9v-3.1C15.15 9.25 13.6 9 12 9z"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 来电提示 -->
+  <div class="overlay-bg" id="overlayBg"></div>
+  <div class="incoming-call-modal" id="incomingCallModal">
+    <h3>Incoming Call</h3>
+    <div class="caller-id" id="callerId"></div>
+    <div class="call-type" id="callType">Voice Call</div>
+    <div class="incoming-call-actions">
+      <button class="reject" id="rejectCallBtn" title="Reject">
+        <svg viewBox="0 0 24 24"><path d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85-.18.18-.43.28-.7.28-.28 0-.53-.11-.71-.29L.29 13.08c-.18-.17-.29-.42-.29-.7 0-.28.11-.53.29-.71C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67c.18.18.29.43.29.71 0 .28-.11.53-.29.71l-2.48 2.48c-.18.18-.43.29-.71.29-.27 0-.52-.11-.7-.28-.79-.74-1.69-1.36-2.67-1.85-.33-.16-.56-.5-.56-.9v-3.1C15.15 9.25 13.6 9 12 9z"/></svg>
+      </button>
+      <button class="accept" id="acceptCallBtn" title="Accept">
+        <svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.91-3c-.49 0-.9.36-.98.85C16.52 14.2 14.47 16 12 16s-4.52-1.8-4.93-4.15c-.08-.49-.49-.85-.98-.85-.61 0-1.09.54-1 1.14.49 3 2.89 5.35 5.91 5.78V20c0 .55.45 1 1 1s1-.45 1-1v-2.08c3.02-.43 5.42-2.78 5.91-5.78.1-.6-.39-1.14-1-1.14z"/></svg>
+      </button>
     </div>
   </div>
 

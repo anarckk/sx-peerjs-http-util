@@ -1,5 +1,15 @@
-import { Peer, DataConnection } from 'peerjs';
-import type { Request, Response, SimpleHandler } from './types';
+import { Peer, DataConnection, MediaConnection } from 'peerjs';
+import type {
+  Request,
+  Response,
+  SimpleHandler,
+  CallOptions,
+  CallSession,
+  CallState,
+  CallStateListener,
+  IncomingCallEvent,
+  IncomingCallListener
+} from './types';
 
 // 版本号（构建时注入）
 declare const __VERSION__: string;
@@ -31,6 +41,131 @@ export interface ServerConfig {
  */
 function generateUUID(): string {
   return crypto.randomUUID();
+}
+
+/**
+ * CallSessionImpl - 通话会话的内部实现
+ */
+class CallSessionImpl implements CallSession {
+  readonly peerId: string;
+  readonly hasVideo: boolean;
+
+  private mediaConnection: MediaConnection;
+  private localStream: MediaStream | null = null;
+  private remoteStream: MediaStream | null = null;
+  private stateListeners = new Set<CallStateListener>();
+  private debugLogFn: (obj: string, event: string, data?: unknown) => void;
+  private onCleanup: (session: CallSessionImpl) => void;
+
+  private _state: CallState = 'connecting';
+  private isMuted = false;
+  private isVideoEnabled = true;
+
+  constructor(
+    peerId: string,
+    mediaConnection: MediaConnection,
+    hasVideo: boolean,
+    debugLog: (obj: string, event: string, data?: unknown) => void,
+    onCleanup: (session: CallSessionImpl) => void
+  ) {
+    this.peerId = peerId;
+    this.mediaConnection = mediaConnection;
+    this.hasVideo = hasVideo;
+    this.debugLogFn = debugLog;
+    this.onCleanup = onCleanup;
+  }
+
+  get isConnected(): boolean {
+    return this._state === 'connected';
+  }
+
+  get state(): CallState {
+    return this._state;
+  }
+
+  setState(state: CallState, reason?: string): void {
+    this._state = state;
+    this.notifyStateChange(state, reason);
+  }
+
+  setLocalStream(stream: MediaStream): void {
+    this.localStream = stream;
+  }
+
+  setRemoteStream(stream: MediaStream): void {
+    this.remoteStream = stream;
+  }
+
+  getLocalStream(): MediaStream | null {
+    return this.localStream;
+  }
+
+  getRemoteStream(): MediaStream | null {
+    return this.remoteStream;
+  }
+
+  toggleMute(): boolean {
+    if (!this.localStream) return this.isMuted;
+
+    const audioTracks = this.localStream.getAudioTracks();
+    for (const track of audioTracks) {
+      track.enabled = this.isMuted; // 切换状态
+    }
+    this.isMuted = !this.isMuted;
+    this.debugLogFn('CallSession', 'toggleMute', this.isMuted);
+    return this.isMuted;
+  }
+
+  toggleVideo(): boolean {
+    if (!this.hasVideo || !this.localStream) return this.isVideoEnabled;
+
+    const videoTracks = this.localStream.getVideoTracks();
+    for (const track of videoTracks) {
+      track.enabled = !this.isVideoEnabled; // 切换状态
+    }
+    this.isVideoEnabled = !this.isVideoEnabled;
+    this.debugLogFn('CallSession', 'toggleVideo', this.isVideoEnabled);
+    return this.isVideoEnabled;
+  }
+
+  hangUp(): void {
+    this.debugLogFn('CallSession', 'hangUp', this.peerId);
+    this.mediaConnection.close();
+  }
+
+  close(): void {
+    // 停止本地流
+    if (this.localStream) {
+      this.localStream.getTracks().forEach(track => track.stop());
+      this.localStream = null;
+    }
+    this.remoteStream = null;
+    this._state = 'ended';
+  }
+
+  onStateChange(listener: CallStateListener): void {
+    this.stateListeners.add(listener);
+  }
+
+  offStateChange(listener: CallStateListener): void {
+    this.stateListeners.delete(listener);
+  }
+
+  private notifyStateChange(state: CallState, reason?: string): void {
+    this.debugLogFn('CallSession', 'stateChange', { peer: this.peerId, state, reason });
+    this.stateListeners.forEach(listener => {
+      try {
+        listener(state, reason);
+      } catch (err) {
+        this.debugLogFn('CallSession', 'listenerError', err);
+      }
+    });
+
+    // 通话结束时清理
+    if (state === 'ended') {
+      this.onCleanup(this);
+    }
+  }
 }
 
 /**
@@ -100,6 +235,16 @@ export class PeerJsWrapper {
    * 服务器配置
    */
   private serverConfig?: ServerConfig;
+
+  /**
+   * 当前活跃的通话
+   */
+  private activeCall: CallSessionImpl | null = null;
+
+  /**
+   * 来电监听器集合
+   */
+  private incomingCallListeners = new Set<IncomingCallListener>();
 
   /**
    * 创建 PeerJsWrapper 实例
@@ -175,6 +320,11 @@ export class PeerJsWrapper {
 
     this.peerInstance.on('close', () => {
       this.debugLog('Peer', 'close');
+    });
+
+    // 处理来电
+    this.peerInstance.on('call', (mediaConnection: MediaConnection) => {
+      this.handleIncomingCall(mediaConnection);
     });
 
     // 设置传入连接处理器
@@ -414,6 +564,233 @@ export class PeerJsWrapper {
     });
   }
 
+  // ============== 语音/视频通话相关方法 ==============
+
+  /**
+   * 发起语音/视频通话
+   * @param peerId 对端设备 ID
+   * @param options 通话选项
+   * @returns Promise<CallSession> 通话会话对象
+   */
+  call(peerId: string, options?: CallOptions): Promise<CallSession> {
+    return new Promise((resolve, reject) => {
+      this.debugLog('PeerJsWrapper', 'call', { peerId, options });
+
+      // 检查是否已有活跃通话
+      if (this.activeCall) {
+        reject(new Error('Already in a call'));
+        return;
+      }
+
+      // 等待 peer 实例准备好
+      this.waitForReady()
+        .then(async () => {
+          if (!this.peerInstance) {
+            reject(new Error('Peer instance not available'));
+            return;
+          }
+
+          const hasVideo = options?.video ?? false;
+
+          // 获取本地媒体流
+          let localStream: MediaStream;
+          try {
+            localStream = await navigator.mediaDevices.getUserMedia({
+              audio: true,
+              video: hasVideo
+            });
+          } catch (err) {
+            reject(new Error(`Failed to get media: ${err instanceof Error ? err.message : err}`));
+            return;
+          }
+
+          // 创建 MediaConnection
+          const mediaConnection = this.peerInstance.call(peerId, localStream, {
+            metadata: {
+              video: hasVideo,
+              custom: options?.metadata
+            }
+          });
+
+          // 创建通话会话
+          const session = new CallSessionImpl(
+            peerId,
+            mediaConnection,
+            hasVideo,
+            this.debugLog.bind(this),
+            this.cleanupCall.bind(this)
+          );
+          session.setLocalStream(localStream);
+
+          // 设置 MediaConnection 事件处理
+          this.setupMediaConnectionHandlers(session, mediaConnection);
+
+          // 保存为活跃通话
+          this.activeCall = session;
+
+          // 设置超时（30秒无应答）
+          const timeout = setTimeout(() => {
+            if (!session.isConnected) {
+              session.hangUp();
+              reject(new Error('Call timeout - no answer'));
+            }
+          }, 30000);
+
+          // 监听连接状态
+          const onConnected = () => {
+            clearTimeout(timeout);
+            session.offStateChange(onConnected);
+            session.offStateChange(onEnded);
+            resolve(session);
+          };
+
+          const onEnded = (state: CallState, reason?: string) => {
+            clearTimeout(timeout);
+            session.offStateChange(onConnected);
+            session.offStateChange(onEnded);
+            if (state === 'ended') {
+              reject(new Error(reason || 'Call ended before connected'));
+            }
+          };
+
+          session.onStateChange(onConnected);
+          session.onStateChange(onEnded);
+        })
+        .catch(reject);
+    });
+  }
+
+  /**
+   * 注册来电监听器
+   * @param listener 来电回调函数
+   */
+  onIncomingCall(listener: IncomingCallListener): void {
+    this.incomingCallListeners.add(listener);
+  }
+
+  /**
+   * 移除来电监听器
+   * @param listener 来电回调函数
+   */
+  offIncomingCall(listener: IncomingCallListener): void {
+    this.incomingCallListeners.delete(listener);
+  }
+
+  /**
+   * 获取当前活跃的通话
+   * @returns CallSession | null 当前通话会话，无通话时返回 null
+   */
+  getActiveCall(): CallSession | null {
+    return this.activeCall;
+  }
+
+  /**
+   * 设置 MediaConnection 事件处理器
+   */
+  private setupMediaConnectionHandlers(
+    session: CallSessionImpl,
+    mediaConnection: MediaConnection
+  ): void {
+    mediaConnection.on('stream', (remoteStream: MediaStream) => {
+      this.debugLog('MediaConnection', 'stream', { peer: mediaConnection.peer });
+      session.setRemoteStream(remoteStream);
+      session.setState('connected');
+    });
+
+    mediaConnection.on('close', () => {
+      this.debugLog('MediaConnection', 'close', mediaConnection.peer);
+      session.close();
+      session.setState('ended', 'Connection closed');
+    });
+
+    mediaConnection.on('error', (err) => {
+      this.debugLog('MediaConnection', 'error', { peer: mediaConnection.peer, error: err });
+      session.close();
+      session.setState('ended', err.message || 'Media error');
+    });
+  }
+
+  /**
+   * 清理通话资源
+   */
+  private cleanupCall(session: CallSessionImpl): void {
+    if (this.activeCall === session) {
+      this.activeCall = null;
+    }
+  }
+
+  /**
+   * 处理来电
+   */
+  private handleIncomingCall(mediaConnection: MediaConnection): void {
+    this.debugLog('Peer', 'call', { from: mediaConnection.peer, metadata: mediaConnection.metadata });
+
+    const metadata = mediaConnection.metadata as { video?: boolean; custom?: unknown } | undefined;
+    const hasVideo = metadata?.video ?? false;
+
+    // 创建来电事件对象
+    const event: IncomingCallEvent = {
+      from: mediaConnection.peer,
+      hasVideo,
+      metadata: metadata?.custom,
+
+      answer: async () => {
+        // 检查是否已有活跃通话
+        if (this.activeCall) {
+          mediaConnection.close();
+          throw new Error('Already in a call');
+        }
+
+        // 获取本地媒体流
+        let localStream: MediaStream;
+        try {
+          localStream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+            video: hasVideo
+          });
+        } catch (err) {
+          mediaConnection.close();
+          throw new Error(`Failed to get media: ${err instanceof Error ? err.message : err}`);
+        }
+
+        // 接听
+        mediaConnection.answer(localStream);
+
+        // 创建通话会话
+        const session = new CallSessionImpl(
+          mediaConnection.peer,
+          mediaConnection,
+          hasVideo,
+          this.debugLog.bind(this),
+          this.cleanupCall.bind(this)
+        );
+        session.setLocalStream(localStream);
+
+        // 设置事件处理
+        this.setupMediaConnectionHandlers(session, mediaConnection);
+
+        // 保存为活跃通话
+        this.activeCall = session;
+
+        return session;
+      },
+
+      reject: () => {
+        mediaConnection.close();
+        this.debugLog('Call', 'rejected', mediaConnection.peer);
+      }
+    };
+
+    // 通知所有监听器
+    this.incomingCallListeners.forEach(listener => {
+      try {
+        listener(event);
+      } catch (err) {
+        this.debugLog('IncomingCallListener', 'error', err);
+      }
+    });
+  }
+
   /**
    * 注册简化处理器（直接返回数据，自动装箱）
    * @param path 请求路径
@@ -463,6 +840,15 @@ export class PeerJsWrapper {
       this.reconnectTimer = null;
     }
 
+    // 挂断活跃通话
+    if (this.activeCall) {
+      this.activeCall.hangUp();
+      this.activeCall = null;
+    }
+
+    // 清除来电监听器
+    this.incomingCallListeners.clear();
+
     for (const conn of this.connections.values()) {
       conn.close();
     }
@@ -483,4 +869,14 @@ export class PeerJsWrapper {
 }
 
 // 导出类型
-export type { Request, Response, SimpleHandler };
+export type {
+  Request,
+  Response,
+  SimpleHandler,
+  CallOptions,
+  CallSession,
+  CallState,
+  CallStateListener,
+  IncomingCallEvent,
+  IncomingCallListener
+};

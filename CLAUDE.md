@@ -3,8 +3,8 @@
 ```
 sx-peerjs-http-util/
 ├── src/
-│   ├── index.ts - PeerJsWrapper 类实现，封装 PeerJS 为类似 HTTP 的 API
-│   └── types.ts - 类型定义 (Request, Response, RequestHandler, SimpleHandler, RouterMap)
+│   ├── index.ts - PeerJsWrapper 类实现，封装 PeerJS 为类似 HTTP 的 API，包含语音/视频通话功能
+│   └── types.ts - 类型定义 (Request, Response, SimpleHandler, CallOptions, CallSession, IncomingCallEvent 等)
 ├── e2e/
 │   ├── test.spec.ts - Playwright E2E 测试用例
 │   ├── test-server.html - 服务端测试页面
@@ -44,6 +44,23 @@ sx-peerjs-http-util/
 - `unregisterHandler(path)` - 销毁路径处理器
 - `destroy()` - 销毁实例
 
+### 语音/视频通话 API
+- `call(peerId, options?)` - 发起语音/视频通话，返回 `Promise<CallSession>`
+- `onIncomingCall(listener)` - 注册来电监听器
+- `offIncomingCall(listener)` - 移除来电监听器
+- `getActiveCall()` - 获取当前活跃的通话，返回 `CallSession | null`
+- `CallSession` 接口：
+  - `peerId` - 对端 Peer ID
+  - `hasVideo` - 是否包含视频
+  - `isConnected` - 是否已连接
+  - `getLocalStream()` - 获取本地媒体流
+  - `getRemoteStream()` - 获取远程媒体流
+  - `toggleMute()` - 切换静音状态
+  - `toggleVideo()` - 切换视频开关
+  - `hangUp()` - 挂断通话
+  - `onStateChange(listener)` - 注册状态变化监听器
+  - `offStateChange(listener)` - 移除状态变化监听器
+
 ### 技术要点
 - 每次请求都重新连接 conn（不复用连接）
 - request/response 不需要 header，保持简化
@@ -52,6 +69,15 @@ sx-peerjs-http-util/
 - **断线重连**：网络断开或连接失败时，每秒自动重连
 - Peer ID 由本地生成（使用 `crypto.randomUUID()`），不依赖服务器分配
 - **调试模式**：`isDebug=true` 时打印事件日志，格式为 `{对象} {事件名} {事件变量}`
+
+### 语音/视频通话技术要点
+- 使用 PeerJS 的 MediaConnection（`peer.call()` 和 `peer.on('call')`）
+- 通过 `navigator.mediaDevices.getUserMedia()` 获取麦克风/摄像头
+- 静音通过 `MediaStreamTrack.enabled = false` 实现
+- 视频开关通过 `MediaStreamTrack.enabled` 切换
+- 同一时间只能有一个活跃通话（`activeCall` 检查）
+- 通话超时 30 秒无应答自动挂断
+- `destroy()` 时自动挂断活跃通话并清理监听器
 
 ### P2P Chat 文件传输功能
 - **小文件传输**（<100MB）：直接传输，一次性发送完整文件
@@ -65,6 +91,14 @@ sx-peerjs-http-util/
   - `/file/chunk` - 大文件分片
   - `/file/complete` - 大文件完成
 - **消息持久化**：文本消息和文件都存储在 IndexedDB
+
+### P2P Chat 语音/视频通话功能
+- **语音通话**：点击聊天头部的电话按钮发起语音通话
+- **视频通话**：点击聊天头部的视频按钮发起视频通话
+- **来电提示**：收到来电时显示模态框，可选择接听或拒绝
+- **通话控制**：静音、挂断按钮
+- **本地预览**：视频通话时显示本地摄像头小窗预览
+- **界面切换**：通话时全屏显示通话界面，挂断后返回聊天界面
 
 ### 发布信息
 - NPM 包名：`sx-peerjs-http-util`

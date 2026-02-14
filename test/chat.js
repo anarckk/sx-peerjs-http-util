@@ -25,6 +25,10 @@ let currentPeerId = null;
 let contacts = [];
 let fileRecords = new Map(); // fileId -> record
 
+// 通话状态
+let currentCallSession = null;
+let pendingIncomingCall = null;
+
 // DOM 元素引用
 let myPeerIdEl = null;
 let statusEl = null;
@@ -162,7 +166,17 @@ async function renderChatArea() {
   });
 
   chatAreaEl.innerHTML = `
-    <div class="chat-header">Chat with: <span>${currentPeerId}</span></div>
+    <div class="chat-header">
+      <span>Chat with: <span>${currentPeerId}</span></span>
+      <div class="call-actions">
+        <button class="call-btn voice" id="voiceCallBtn" title="Voice Call">
+          <svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.91-3c-.49 0-.9.36-.98.85C16.52 14.2 14.47 16 12 16s-4.52-1.8-4.93-4.15c-.08-.49-.49-.85-.98-.85-.61 0-1.09.54-1 1.14.49 3 2.89 5.35 5.91 5.78V20c0 .55.45 1 1 1s1-.45 1-1v-2.08c3.02-.43 5.42-2.78 5.91-5.78.1-.6-.39-1.14-1-1.14z"/></svg>
+        </button>
+        <button class="call-btn video" id="videoCallBtn" title="Video Call">
+          <svg viewBox="0 0 24 24"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>
+        </button>
+      </div>
+    </div>
     <div class="messages" id="messagesContainer">
       ${messages.map((m) => renderMessageBubble(m)).join('')}
     </div>
@@ -188,6 +202,13 @@ async function renderChatArea() {
   input.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') sendMessage(input, btn);
   });
+
+  // 绑定通话按钮事件
+  const voiceCallBtn = document.getElementById('voiceCallBtn');
+  const videoCallBtn = document.getElementById('videoCallBtn');
+
+  voiceCallBtn.addEventListener('click', () => startCall(false));
+  videoCallBtn.addEventListener('click', () => startCall(true));
 }
 
 /**
@@ -456,7 +477,248 @@ async function init() {
       newPeerIdInput.value = '';
     }
   });
+
+  // 注册来电监听器
+  peer.onIncomingCall(handleIncomingCall);
+
+  // 绑定通话界面控制按钮
+  setupCallControls();
 }
 
 // 启动应用
 init();
+
+// ============== 通话相关函数 ==============
+
+/**
+ * 设置通话控制按钮事件
+ */
+function setupCallControls() {
+  const muteBtn = document.getElementById('muteBtn');
+  const hangupBtn = document.getElementById('hangupBtn');
+  const acceptCallBtn = document.getElementById('acceptCallBtn');
+  const rejectCallBtn = document.getElementById('rejectCallBtn');
+
+  muteBtn.addEventListener('click', toggleMute);
+  hangupBtn.addEventListener('click', hangupCall);
+  acceptCallBtn.addEventListener('click', answerIncomingCall);
+  rejectCallBtn.addEventListener('click', rejectIncomingCall);
+}
+
+/**
+ * 发起通话
+ */
+async function startCall(hasVideo) {
+  if (!currentPeerId) {
+    alert('Please select a contact first');
+    return;
+  }
+
+  if (currentCallSession) {
+    alert('Already in a call');
+    return;
+  }
+
+  showCallOverlay('Calling...', currentPeerId, hasVideo);
+
+  try {
+    const session = await peer.call(currentPeerId, { video: hasVideo });
+    currentCallSession = session;
+
+    // 显示本地预览
+    const localStream = session.getLocalStream();
+    if (localStream) {
+      const localVideo = document.getElementById('localVideo');
+      localVideo.srcObject = localStream;
+    }
+
+    // 监听状态变化
+    session.onStateChange((state, reason) => {
+      if (state === 'connected') {
+        showCallOverlay('Connected', currentPeerId, hasVideo);
+        const remoteStream = session.getRemoteStream();
+        if (remoteStream) {
+          const remoteVideo = document.getElementById('remoteVideo');
+          remoteVideo.srcObject = remoteStream;
+          if (!hasVideo) {
+            remoteVideo.style.display = 'none';
+            document.getElementById('audioOnlyIndicator').style.display = 'flex';
+          }
+        }
+      } else if (state === 'ended') {
+        hideCallOverlay();
+        currentCallSession = null;
+        if (reason) {
+          console.log('Call ended:', reason);
+        }
+      }
+    });
+  } catch (err) {
+    hideCallOverlay();
+    alert('Failed to start call: ' + err.message);
+  }
+}
+
+/**
+ * 处理来电
+ */
+function handleIncomingCall(event) {
+  pendingIncomingCall = event;
+
+  // 显示来电提示
+  const modal = document.getElementById('incomingCallModal');
+  const overlayBg = document.getElementById('overlayBg');
+  const callerIdEl = document.getElementById('callerId');
+  const callTypeEl = document.getElementById('callType');
+
+  callerIdEl.textContent = event.from;
+  callTypeEl.textContent = event.hasVideo ? 'Video Call' : 'Voice Call';
+
+  modal.classList.add('active');
+  overlayBg.classList.add('active');
+}
+
+/**
+ * 接听来电
+ */
+async function answerIncomingCall() {
+  if (!pendingIncomingCall) return;
+
+  const event = pendingIncomingCall;
+  pendingIncomingCall = null;
+
+  // 隐藏来电提示
+  document.getElementById('incomingCallModal').classList.remove('active');
+  document.getElementById('overlayBg').classList.remove('active');
+
+  showCallOverlay('Connecting...', event.from, event.hasVideo);
+
+  try {
+    const session = await event.answer();
+    currentCallSession = session;
+
+    // 确保来电者在联系人列表中
+    if (!contacts.find((c) => c.peerId === event.from)) {
+      await db.saveContact(event.from);
+      contacts.push({ peerId: event.from });
+      renderContacts();
+    }
+
+    // 显示本地预览
+    const localStream = session.getLocalStream();
+    if (localStream) {
+      const localVideo = document.getElementById('localVideo');
+      localVideo.srcObject = localStream;
+    }
+
+    // 监听状态变化
+    session.onStateChange((state, reason) => {
+      if (state === 'connected') {
+        showCallOverlay('Connected', event.from, event.hasVideo);
+        const remoteStream = session.getRemoteStream();
+        if (remoteStream) {
+          const remoteVideo = document.getElementById('remoteVideo');
+          remoteVideo.srcObject = remoteStream;
+          if (!event.hasVideo) {
+            remoteVideo.style.display = 'none';
+            document.getElementById('audioOnlyIndicator').style.display = 'flex';
+          }
+        }
+      } else if (state === 'ended') {
+        hideCallOverlay();
+        currentCallSession = null;
+      }
+    });
+  } catch (err) {
+    hideCallOverlay();
+    alert('Failed to answer call: ' + err.message);
+  }
+}
+
+/**
+ * 拒绝来电
+ */
+function rejectIncomingCall() {
+  if (pendingIncomingCall) {
+    pendingIncomingCall.reject();
+    pendingIncomingCall = null;
+  }
+
+  document.getElementById('incomingCallModal').classList.remove('active');
+  document.getElementById('overlayBg').classList.remove('active');
+}
+
+/**
+ * 挂断通话
+ */
+function hangupCall() {
+  if (currentCallSession) {
+    currentCallSession.hangUp();
+    currentCallSession = null;
+  }
+  hideCallOverlay();
+}
+
+/**
+ * 切换静音
+ */
+function toggleMute() {
+  if (!currentCallSession) return;
+
+  const isMuted = currentCallSession.toggleMute();
+  const muteBtn = document.getElementById('muteBtn');
+
+  if (isMuted) {
+    muteBtn.classList.add('active');
+  } else {
+    muteBtn.classList.remove('active');
+  }
+}
+
+/**
+ * 显示通话界面
+ */
+function showCallOverlay(status, peerId, hasVideo) {
+  const overlay = document.getElementById('callOverlay');
+  const statusEl = document.getElementById('callStatus');
+  const peerIdEl = document.getElementById('callPeerId');
+  const remoteVideo = document.getElementById('remoteVideo');
+  const audioIndicator = document.getElementById('audioOnlyIndicator');
+
+  statusEl.textContent = status;
+  peerIdEl.textContent = peerId;
+
+  // 重置状态
+  remoteVideo.style.display = hasVideo ? 'block' : 'none';
+  audioIndicator.style.display = hasVideo ? 'none' : 'flex';
+  remoteVideo.srcObject = null;
+  document.getElementById('localVideo').srcObject = null;
+
+  overlay.classList.add('active');
+  overlay.classList.toggle('calling', status === 'Calling...' || status === 'Connecting...');
+  overlay.classList.toggle('connected', status === 'Connected');
+}
+
+/**
+ * 隐藏通话界面
+ */
+function hideCallOverlay() {
+  const overlay = document.getElementById('callOverlay');
+  overlay.classList.remove('active', 'calling', 'connected');
+
+  // 清理视频流
+  const remoteVideo = document.getElementById('remoteVideo');
+  const localVideo = document.getElementById('localVideo');
+
+  if (remoteVideo.srcObject) {
+    remoteVideo.srcObject.getTracks().forEach(t => t.stop());
+    remoteVideo.srcObject = null;
+  }
+  if (localVideo.srcObject) {
+    localVideo.srcObject.getTracks().forEach(t => t.stop());
+    localVideo.srcObject = null;
+  }
+
+  // 重置静音按钮状态
+  document.getElementById('muteBtn').classList.remove('active');
+}
