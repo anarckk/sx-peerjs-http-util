@@ -89,19 +89,21 @@ wrapper.onIncomingCall((event) => {
   // event.reject();
 });
 
-// 获取媒体流用于显示
-const remoteStream = callSession.getRemoteStream();
+// 获取本地媒体流（立即可用）
 const localStream = callSession.getLocalStream();
+
+// 远程媒体流需要等待 connected 状态
+callSession.onStateChange((state) => {
+  if (state === 'connected') {
+    const remoteStream = callSession.getRemoteStream();
+    // 将 remoteStream 设置到 <audio> 或 <video> 元素
+  }
+});
 
 // 控制通话
 callSession.toggleMute();   // 切换静音
 callSession.toggleVideo();  // 切换视频开关
 callSession.hangUp();       // 挂断
-
-// 监听通话状态
-callSession.onStateChange((state, reason) => {
-  console.log('通话状态:', state); // 'connecting' | 'connected' | 'ended'
-});
 ```
 
 ### 销毁实例 (destroy)
@@ -295,6 +297,23 @@ wrapper.destroy();
 | `metadata` | 呼叫者传递的元数据 |
 | `answer()` | 接听来电，返回 `Promise<CallSession>` |
 | `reject()` | 拒绝来电 |
+
+## Demo 示例
+
+项目包含四个最小示例（CDN 引入方式）：
+
+| Demo | 说明 |
+|------|------|
+| `demos/text-chat/` | 文字传输 |
+| `demos/file-transfer/` | 文件传输 |
+| `demos/voice-call/` | 语音通话 |
+| `demos/video-call/` | 视频通话 |
+
+运行方式：
+```bash
+npx serve
+# 然后访问 http://localhost:3000/demos/video-call/
+```
 
 ## E2E 测试
 
