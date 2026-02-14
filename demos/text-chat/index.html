@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>文字传输 Demo</title>
+  <style>
+    body { font-family: sans-serif; max-width: 500px; margin: 20px auto; padding: 0 10px; }
+    .row { margin: 10px 0; }
+    label { display: block; margin-bottom: 4px; }
+    input { width: 100%; box-sizing: border-box; padding: 8px; }
+    button { padding: 8px 16px; cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    #peerId { background: #f0f0f0; padding: 8px; word-break: break-all; }
+    #messages { border: 1px solid #ccc; height: 300px; overflow-y: auto; padding: 10px; margin: 10px 0; }
+    .msg { margin: 5px 0; padding: 5px 10px; border-radius: 8px; }
+    .msg.sent { background: #dcf8c6; text-align: right; }
+    .msg.received { background: #f1f0f0; }
+    #inputRow { display: flex; gap: 8px; }
+    #inputRow input { flex: 1; }
+  </style>
+</head>
+<body>
+  <h2>文字传输 Demo</h2>
+
+  <div class="row">
+    <label>我的 Peer ID:</label>
+    <div id="peerId">连接中...</div>
+  </div>
+
+  <div class="row">
+    <label>对方 Peer ID:</label>
+    <input type="text" id="remotePeerId" placeholder="输入对方 Peer ID">
+  </div>
+
+  <div id="messages"></div>
+
+  <div id="inputRow">
+    <input type="text" id="msgInput" placeholder="输入消息" disabled>
+    <button id="sendBtn" disabled>发送</button>
+  </div>
+
+  <script src="https://unpkg.com/sx-peerjs-http-util/dist/index.umd.js"></script>
+  <script>
+    const wrapper = new PeerJsHttpUtil.PeerJsWrapper();
+
+    const peerIdEl = document.getElementById('peerId');
+    const remotePeerIdEl = document.getElementById('remotePeerId');
+    const messagesEl = document.getElementById('messages');
+    const msgInputEl = document.getElementById('msgInput');
+    const sendBtn = document.getElementById('sendBtn');
+
+    // 初始化
+    wrapper.whenReady().then(() => {
+      peerIdEl.textContent = wrapper.getPeerId();
+      msgInputEl.disabled = false;
+      sendBtn.disabled = false;
+    });
+
+    // 注册消息处理器（接收消息）
+    wrapper.registerHandler('/message', (from, data) => {
+      addMessage(data.text, 'received', from);
+      return { ok: true };
+    });
+
+    // 添加消息到界面
+    function addMessage(text, type, from) {
+      const div = document.createElement('div');
+      div.className = 'msg ' + type;
+      div.textContent = type === 'received' ? `${from.slice(0, 8)}: ${text}` : text;
+      messagesEl.appendChild(div);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    // 发送消息
+    async function sendMessage() {
+      const text = msgInputEl.value.trim();
+      const remoteId = remotePeerIdEl.value.trim();
+      if (!text || !remoteId) return;
+
+      try {
+        await wrapper.send(remoteId, '/message', { text });
+        addMessage(text, 'sent');
+        msgInputEl.value = '';
+      } catch (err) {
+        alert('发送失败: ' + err.message);
+      }
+    }
+
+    sendBtn.onclick = sendMessage;
+    msgInputEl.onkeypress = (e) => { if (e.key === 'Enter') sendMessage(); };
+  </script>
+</body>
+</html>

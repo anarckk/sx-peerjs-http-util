@@ -17,6 +17,15 @@ sx-peerjs-http-util/
 │   └── chat-file-ui.js - 文件传输 UI 组件（图片、视频、文件消息气泡）
 ├── scripts/
 │   └── build.js - esbuild 构建脚本，生成 ESM 和 UMD 两种格式
+├── demos/
+│   ├── text-chat/
+│   │   └── index.html - 文字传输最小示例（CDN 引入方式）
+│   ├── file-transfer/
+│   │   └── index.html - 文件传输最小示例（CDN 引入方式）
+│   ├── voice-call/
+│   │   └── index.html - 语音通话最小示例（CDN 引入方式）
+│   └── video-call/
+│       └── index.html - 视频通话最小示例（CDN 引入方式）
 ├── dist/ - 编译输出目录
 │   ├── index.esm.js - ES Module 格式 (NPM 引入)
 │   ├── index.umd.js - IIFE 格式 (CDN 引入，已内置 PeerJS)

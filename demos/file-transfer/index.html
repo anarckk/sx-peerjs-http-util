@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>文件传输 Demo</title>
+  <style>
+    body { font-family: sans-serif; max-width: 500px; margin: 20px auto; padding: 0 10px; }
+    .row { margin: 10px 0; }
+    label { display: block; margin-bottom: 4px; }
+    input[type="text"] { width: 100%; box-sizing: border-box; padding: 8px; }
+    button { padding: 8px 16px; cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    #peerId { background: #f0f0f0; padding: 8px; word-break: break-all; }
+    #fileInput { display: none; }
+    #progress { margin: 10px 0; }
+    #progressBar { width: 100%; height: 20px; background: #eee; }
+    #progressFill { height: 100%; background: #4caf50; width: 0%; transition: width 0.3s; }
+    #log { border: 1px solid #ccc; height: 200px; overflow-y: auto; padding: 10px; font-size: 12px; background: #fafafa; }
+    #log div { margin: 2px 0; }
+  </style>
+</head>
+<body>
+  <h2>文件传输 Demo</h2>
+
+  <div class="row">
+    <label>我的 Peer ID:</label>
+    <div id="peerId">连接中...</div>
+  </div>
+
+  <div class="row">
+    <label>对方 Peer ID:</label>
+    <input type="text" id="remotePeerId" placeholder="输入对方 Peer ID">
+  </div>
+
+  <div class="row">
+    <button id="selectBtn">选择文件并发送</button>
+    <input type="file" id="fileInput">
+  </div>
+
+  <div id="progress">
+    <div id="progressBar"><div id="progressFill"></div></div>
+    <div id="progressText"></div>
+  </div>
+
+  <div id="log"></div>
+
+  <script src="https://unpkg.com/sx-peerjs-http-util/dist/index.umd.js"></script>
+  <script>
+    const wrapper = new PeerJsHttpUtil.PeerJsWrapper();
+
+    const peerIdEl = document.getElementById('peerId');
+    const remotePeerIdEl = document.getElementById('remotePeerId');
+    const selectBtn = document.getElementById('selectBtn');
+    const fileInput = document.getElementById('fileInput');
+    const progressFill = document.getElementById('progressFill');
+    const progressText = document.getElementById('progressText');
+    const logEl = document.getElementById('log');
+
+    // 初始化
+    wrapper.whenReady().then(() => {
+      peerIdEl.textContent = wrapper.getPeerId();
+    });
+
+    // 日志
+    function log(msg) {
+      const div = document.createElement('div');
+      div.textContent = new Date().toLocaleTimeString() + ' ' + msg;
+      logEl.appendChild(div);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    // 更新进度
+    function setProgress(percent, text) {
+      progressFill.style.width = percent + '%';
+      progressText.textContent = text || '';
+    }
+
+    // 注册文件接收处理器
+    wrapper.registerHandler('/file', (from, data) => {
+      const { name, type, content } = data;
+
+      // content 是 base64 编码的文件内容
+      const byteChars = atob(content);
+      const byteNums = new Array(byteChars.length);
+      for (let i = 0; i < byteChars.length; i++) {
+        byteNums[i] = byteChars.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNums);
+      const blob = new Blob([byteArray], { type });
+
+      // 触发下载
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      log(`收到文件: ${name} (${(byteArray.length / 1024).toFixed(1)} KB)`);
+      return { ok: true };
+    });
+
+    // 选择文件
+    selectBtn.onclick = () => fileInput.click();
+
+    // 发送文件
+    fileInput.onchange = async () => {
+      const file = fileInput.files[0];
+      if (!file) return;
+
+      const remoteId = remotePeerIdEl.value.trim();
+      if (!remoteId) return alert('请输入对方 Peer ID');
+
+      // 限制文件大小（直接传输建议 <10MB）
+      if (file.size > 10 * 1024 * 1024) {
+        return alert('文件过大，建议使用分片传输（此 demo 仅演示直接传输）');
+      }
+
+      try {
+        setProgress(10, '读取文件中...');
+        log(`发送文件: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`);
+
+        // 读取文件为 base64
+        const reader = new FileReader();
+        reader.onload = async () => {
+          const base64 = reader.result.split(',')[1];
+
+          setProgress(50, '传输中...');
+
+          await wrapper.send(remoteId, '/file', {
+            name: file.name,
+            type: file.type,
+            content: base64
+          });
+
+          setProgress(100, '发送完成');
+          log('发送成功');
+          fileInput.value = '';
+        };
+        reader.readAsDataURL(file);
+      } catch (err) {
+        setProgress(0, '发送失败');
+        log('发送失败: ' + err.message);
+      }
+    };
+  </script>
+</body>
+</html>
