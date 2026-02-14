@@ -1,6 +1,13 @@
 import { Peer, DataConnection } from 'peerjs';
 import type { Request, Response, SimpleHandler } from './types';
 
+// 版本号（构建时注入）
+declare const __VERSION__: string;
+export const VERSION = __VERSION__;
+
+// 打印版本号到控制台
+console.log(`[sx-peerjs-http-util] v${VERSION}`);
+
 // 内部消息格式
 interface InternalMessage {
   type: 'request' | 'response';

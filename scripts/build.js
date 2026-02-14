@@ -1,12 +1,15 @@
 import * as esbuild from 'esbuild';
 import { fileURLToPath } from 'url';
 import { dirname, join, resolve } from 'path';
+import { readFileSync } from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const entryFile = resolve(__dirname, '../src/index.ts');
 const outDir = resolve(__dirname, '../dist');
+const packageJson = JSON.parse(readFileSync(resolve(__dirname, '../package.json'), 'utf-8'));
+const VERSION = packageJson.version;
 
 async function build() {
   try {
@@ -20,6 +23,9 @@ async function build() {
       external: ['peerjs'], // npm 用户自行安装 peerjs
       sourcemap: true,
       target: ['es2022'],
+      define: {
+        __VERSION__: JSON.stringify(VERSION),
+      },
     });
     console.log('✓ ESM build complete');
 
@@ -34,6 +40,9 @@ async function build() {
       // 不设置 external，直接打包 peerjs
       sourcemap: true,
       target: ['es2022'],
+      define: {
+        __VERSION__: JSON.stringify(VERSION),
+      },
     });
     console.log('✓ UMD/IIFE build complete');
 
