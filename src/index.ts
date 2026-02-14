@@ -753,10 +753,7 @@ export class PeerJsWrapper {
           throw new Error(`Failed to get media: ${err instanceof Error ? err.message : err}`);
         }
 
-        // 接听
-        mediaConnection.answer(localStream);
-
-        // 创建通话会话
+        // 创建通话会话（先创建，再设置事件处理器）
         const session = new CallSessionImpl(
           mediaConnection.peer,
           mediaConnection,
@@ -766,11 +763,14 @@ export class PeerJsWrapper {
         );
         session.setLocalStream(localStream);
 
-        // 设置事件处理
+        // 设置事件处理（必须在 answer 之前设置，否则可能丢失 stream 事件）
         this.setupMediaConnectionHandlers(session, mediaConnection);
 
         // 保存为活跃通话
         this.activeCall = session;
+
+        // 接听（放在最后，因为 answer 后可能立即触发 stream 事件）
+        mediaConnection.answer(localStream);
 
         return session;
       },
