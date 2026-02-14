@@ -210,6 +210,12 @@ sx-peerjs-http-util/
 - **解决**：先切换状态，再用新状态设置行为：`this.isMuted = !this.isMuted; track.enabled = !this.isMuted;`
 - **原则**：变量语义和赋值方向要一致，避免"双重否定"式的逻辑
 
+### 14. WebRTC 远程流是异步到达的
+- **问题**：接听方 `answer()` 返回后立即获取 `getRemoteStream()` 返回 null，导致没有对方画面
+- **原因**：远程媒体流通过 `stream` 事件异步到达，`answer()` 只是开始建立连接，不等待远程流
+- **解决**：监听状态变化（`connected`），在状态变为 `connected` 时再获取并设置远程流
+- **原则**：WebRTC 通话中，远程流到达与 `answer()` 返回是独立的，不能假设同步
+
 ## 上次用户提示词分析时间
 
 2026-02-14 16:51
