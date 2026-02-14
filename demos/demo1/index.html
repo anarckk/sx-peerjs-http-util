@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>语音通话 Demo</title>
+  <style>
+    body { font-family: sans-serif; max-width: 400px; margin: 20px auto; padding: 0 10px; }
+    .row { margin: 10px 0; }
+    label { display: block; margin-bottom: 4px; }
+    input { width: 100%; box-sizing: border-box; padding: 8px; }
+    button { padding: 8px 16px; margin-right: 8px; cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    #peerId { background: #f0f0f0; padding: 8px; word-break: break-all; }
+    #status { color: #666; margin: 10px 0; }
+    #callUI { display: none; background: #f9f9f9; padding: 10px; margin-top: 10px; }
+    #incomingCall { display: none; background: #fff3cd; padding: 10px; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <h2>语音通话 Demo</h2>
+
+  <div class="row">
+    <label>我的 Peer ID:</label>
+    <div id="peerId">连接中...</div>
+  </div>
+
+  <div class="row">
+    <label>对方 Peer ID:</label>
+    <input type="text" id="remotePeerId" placeholder="输入对方 Peer ID">
+  </div>
+
+  <div class="row">
+    <button id="callBtn" disabled>发起通话</button>
+  </div>
+
+  <div id="status"></div>
+
+  <!-- 来电提示 -->
+  <div id="incomingCall">
+    <div>来电: <span id="callerId"></span></div>
+    <button id="answerBtn">接听</button>
+    <button id="rejectBtn">拒绝</button>
+  </div>
+
+  <!-- 通话中 UI -->
+  <div id="callUI">
+    <div>通话中...</div>
+    <button id="muteBtn">静音</button>
+    <button id="hangUpBtn">挂断</button>
+    <audio id="remoteAudio" autoplay></audio>
+  </div>
+
+  <script src="https://unpkg.com/sx-peerjs-http-util/dist/index.umd.js"></script>
+  <script>
+    const wrapper = new PeerJsHttpUtil.PeerJsWrapper();
+
+    const peerIdEl = document.getElementById('peerId');
+    const remotePeerIdEl = document.getElementById('remotePeerId');
+    const callBtn = document.getElementById('callBtn');
+    const statusEl = document.getElementById('status');
+    const incomingCallEl = document.getElementById('incomingCall');
+    const callerIdEl = document.getElementById('callerId');
+    const answerBtn = document.getElementById('answerBtn');
+    const rejectBtn = document.getElementById('rejectBtn');
+    const callUIEl = document.getElementById('callUI');
+    const muteBtn = document.getElementById('muteBtn');
+    const hangUpBtn = document.getElementById('hangUpBtn');
+    const remoteAudio = document.getElementById('remoteAudio');
+
+    let currentSession = null;
+    let isIncoming = false;
+    let incomingEvent = null;
+
+    // 初始化
+    wrapper.whenReady().then(() => {
+      peerIdEl.textContent = wrapper.getPeerId();
+      callBtn.disabled = false;
+    });
+
+    // 监听来电
+    wrapper.onIncomingCall((event) => {
+      incomingEvent = event;
+      callerIdEl.textContent = event.from;
+      incomingCallEl.style.display = 'block';
+    });
+
+    // 发起通话
+    callBtn.onclick = async () => {
+      const remoteId = remotePeerIdEl.value.trim();
+      if (!remoteId) return alert('请输入对方 Peer ID');
+
+      try {
+        statusEl.textContent = '正在呼叫...';
+        isIncoming = false;
+        currentSession = await wrapper.call(remoteId, { video: false });
+        onCallConnected();
+      } catch (err) {
+        statusEl.textContent = '呼叫失败: ' + err.message;
+      }
+    };
+
+    // 接听
+    answerBtn.onclick = async () => {
+      try {
+        isIncoming = true;
+        currentSession = await incomingEvent.answer();
+        incomingCallEl.style.display = 'none';
+        onCallConnected();
+      } catch (err) {
+        statusEl.textContent = '接听失败: ' + err.message;
+      }
+    };
+
+    // 拒绝
+    rejectBtn.onclick = () => {
+      incomingEvent.reject();
+      incomingCallEl.style.display = 'none';
+      incomingEvent = null;
+    };
+
+    // 通话建立
+    function onCallConnected() {
+      statusEl.textContent = '通话中';
+      callUIEl.style.display = 'block';
+      callBtn.disabled = true;
+
+      // 播放远程音频
+      const remoteStream = currentSession.getRemoteStream();
+      if (remoteStream) {
+        remoteAudio.srcObject = remoteStream;
+      }
+
+      // 监听通话结束
+      currentSession.onStateChange((state) => {
+        if (state === 'ended') {
+          onCallEnded();
+        }
+      });
+    }
+
+    // 通话结束
+    function onCallEnded() {
+      statusEl.textContent = '通话已结束';
+      callUIEl.style.display = 'none';
+      callBtn.disabled = false;
+      remoteAudio.srcObject = null;
+      currentSession = null;
+    }
+
+    // 静音
+    muteBtn.onclick = () => {
+      if (currentSession) {
+        const muted = currentSession.toggleMute();
+        muteBtn.textContent = muted ? '取消静音' : '静音';
+      }
+    };
+
+    // 挂断
+    hangUpBtn.onclick = () => {
+      if (currentSession) {
+        currentSession.hangUp();
+        onCallEnded();
+      }
+    };
+  </script>
+</body>
+</html>
