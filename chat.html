@@ -439,7 +439,7 @@
         const msg = await saveMessage(currentPeerId, text, true);
 
         // 发送到对端
-        await peer.send(currentPeerId, '/chat', { text, from: peer.getPeerId() });
+        await peer.send(currentPeerId, '/chat', { text });
 
         // 更新UI
         appendMessage(msg);
@@ -545,8 +545,8 @@
       });
 
       // 注册聊天处理器
-      peer.registerHandler('/chat', async (data) => {
-        const { text, from } = data;
+      peer.registerHandler('/chat', async (from, data) => {
+        const { text } = data;
 
         // 保存消息
         const msg = await saveMessage(from, text, false);

@@ -371,7 +371,7 @@ export class PeerJsWrapper {
 
         if (message.type === 'request' && message.request) {
           try {
-            const response = await this.handleRequest(message.request);
+            const response = await this.handleRequest(conn.peer, message.request);
 
             const responseMessage: InternalMessage = {
               type: 'response',
@@ -426,11 +426,13 @@ export class PeerJsWrapper {
 
   /**
    * 内部请求处理方法
+   * @param from 发送者的 Peer ID
+   * @param request 请求数据
    */
-  private async handleRequest(request: Request): Promise<Response> {
+  private async handleRequest(from: string, request: Request): Promise<Response> {
     const simpleHandler = this.simpleHandlers.get(request.path);
     if (simpleHandler) {
-      const data = await simpleHandler(request.data);
+      const data = await simpleHandler(from, request.data);
       // 自动装箱：将返回的数据包装成 Response
       return { status: 200, data };
     }

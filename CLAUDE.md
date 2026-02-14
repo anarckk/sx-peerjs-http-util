@@ -35,7 +35,7 @@ sx-peerjs-http-util/
 - `getPeerId()` - 同步方法，返回 `string`（不再是 Promise）
 - `whenReady()` - 等待连接就绪，返回 `Promise<void>`
 - `send(peerId, path, data)` - 发送请求到对端设备，返回 `Promise<unknown>`（非 2xx 状态码会抛出异常）
-- `registerHandler(path, handler)` - 注册路径处理器
+- `registerHandler(path, handler)` - 注册路径处理器，handler 签名为 `(from: string, data?: unknown) => Promise<unknown> | unknown`
 - `unregisterHandler(path)` - 销毁路径处理器
 - `destroy()` - 销毁实例
 
@@ -143,6 +143,7 @@ sx-peerjs-http-util/
 - [x] 应该处理多个并发请求
 - [x] 应该支持不带数据参数的请求
 - [x] 应该支持注册和注销处理器
+- [x] 应该正确传递发送者的 Peer ID (from 参数)
 
 **运行方式**：
 1. 启动私有信令服务器：`cd peerjs-server && node server.js`

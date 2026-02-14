@@ -21,14 +21,19 @@
 
     const wrapper = new PeerJsHttpUtil.PeerJsWrapper(undefined, false, serverConfig);
 
-    wrapper.registerHandler('/api/hello', (data) => {
+    wrapper.registerHandler('/api/hello', (from, data) => {
       return { message: 'Hello from server', received: data };
     });
 
-    wrapper.registerHandler('/api/echo', (data) => data);
+    wrapper.registerHandler('/api/echo', (from, data) => data);
 
-    wrapper.registerHandler('/api/error', () => {
+    wrapper.registerHandler('/api/error', (from) => {
       throw new Error('Test error from server');
+    });
+
+    // 测试 from 参数的处理器
+    wrapper.registerHandler('/api/whoami', (from, data) => {
+      return { yourPeerId: from };
     });
 
     window.testWrapper = wrapper;

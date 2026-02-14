@@ -20,5 +20,7 @@ export interface Response {
 
 /**
  * 简化处理器函数类型（直接返回数据，自动装箱为 Response）
+ * @param from 发送者的 Peer ID
+ * @param data 请求数据
  */
-export type SimpleHandler = (data?: unknown) => Promise<unknown> | unknown;
+export type SimpleHandler = (from: string, data?: unknown) => Promise<unknown> | unknown;

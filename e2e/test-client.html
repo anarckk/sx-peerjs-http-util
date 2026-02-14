@@ -25,11 +25,16 @@
       wrapper,
       send: (peerId, path, data) => wrapper.send(peerId, path, data),
     };
+    window.peerReady = false;
+    window.peerId = null;
 
     wrapper.whenReady().then(() => {
       const id = wrapper.getPeerId();
+      window.peerReady = true;
+      window.peerId = id;
       log('Client connected with ID: ' + id);
       document.getElementById('status').textContent = 'Client ready, Peer ID: ' + id;
+      if (window.getClientPeerId) window.getClientPeerId(id);
     }).catch((err) => {
       log('Client error: ' + err.message);
     });

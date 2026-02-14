@@ -263,7 +263,7 @@ test.describe('PeerJsWrapper E2E Tests', () => {
     await page1.evaluate(() => {
       const wrapper = (window as any).testWrapper;
       if (wrapper) {
-        wrapper.registerHandler('/api/dynamic', (data: any) => {
+        wrapper.registerHandler('/api/dynamic', (from: string, data: any) => {
           return { dynamic: true, ...data };
         });
       }
@@ -298,5 +298,50 @@ test.describe('PeerJsWrapper E2E Tests', () => {
     console.log('After unregister error:', errorMsg);
     expect(errorMsg).toContain('404');
     expect(errorMsg).toContain('Path not found');
+  });
+
+  test('应该正确传递发送者的 Peer ID (from 参数)', async ({ context }) => {
+    const page1 = await context.newPage(); // 服务器端
+    const page2 = await context.newPage(); // 客户端
+
+    // 加载测试页面
+    await page1.goto('http://localhost:8080/e2e/test-server.html');
+    await page2.goto('http://localhost:8080/e2e/test-client.html');
+
+    // 等待服务器端 Peer 准备就绪
+    const serverPeerId = await page1.evaluate(() => {
+      return new Promise<string>((resolve) => {
+        if ((window as any).peerReady && (window as any).peerId) {
+          resolve((window as any).peerId);
+          return;
+        }
+        (window as any).getServerPeerId = resolve;
+      });
+    });
+
+    // 获取客户端 Peer ID
+    const clientPeerId = await page2.evaluate(() => {
+      return new Promise<string>((resolve) => {
+        if ((window as any).peerReady && (window as any).peerId) {
+          resolve((window as any).peerId);
+          return;
+        }
+        (window as any).getClientPeerId = resolve;
+      });
+    });
+
+    console.log('Server Peer ID:', serverPeerId);
+    console.log('Client Peer ID:', clientPeerId);
+
+    // 客户端发送请求到 /api/whoami，服务端会返回发送者的 Peer ID
+    const data = await page2.evaluate(async (args: { peerId: string; path: string }) => {
+      return await (window as any).sxPeerHttpUtil.send(args.peerId, args.path);
+    }, { peerId: serverPeerId, path: '/api/whoami' });
+
+    console.log('Whoami response:', data);
+
+    // 验证服务端正确识别了发送者的 Peer ID
+    expect(data).toHaveProperty('yourPeerId');
+    expect((data as any).yourPeerId).toEqual(clientPeerId);
   });
 });
