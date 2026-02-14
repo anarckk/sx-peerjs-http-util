@@ -1,11 +1,12 @@
 # sx-peerjs-http-util
 
-一个浏览器端库，将 PeerJS 封装成简单易用的类似 HTTP 的 API。
+一个浏览器端库，将 PeerJS 封装成简单易用的类似 HTTP 的 API，并支持语音/视频通话。
 
 ## 特性
 
 - 简单的请求-响应 API，类似 HTTP
 - 基于 PeerJS (WebRTC) 实现 P2P 通信
+- **语音/视频通话**：支持一对一语音和视频通话
 - TypeScript 支持
 - 完整的 E2E 测试
 - **支持 NPM 和 CDN 两种引入方式**
@@ -60,12 +61,47 @@ console.log(data); // 直接输出响应数据（自动拆箱）
 
 ```typescript
 // 服务端注册处理器
-wrapper.registerHandler('/api/hello', (data) => {
+wrapper.registerHandler('/api/hello', (from, data) => {
   return { message: 'hello', received: data }; // 直接返回数据，自动装箱
 });
 
 // 注销处理器
 wrapper.unregisterHandler('/api/hello');
+```
+
+### 语音/视频通话
+
+```typescript
+// 发起语音通话
+const callSession = await wrapper.call('remote-peer-id', { video: false });
+
+// 发起视频通话
+// const callSession = await wrapper.call('remote-peer-id', { video: true });
+
+// 监听来电
+wrapper.onIncomingCall((event) => {
+  console.log('来电:', event.from, event.hasVideo ? '视频' : '语音');
+
+  // 接听
+  const session = await event.answer();
+
+  // 或拒绝
+  // event.reject();
+});
+
+// 获取媒体流用于显示
+const remoteStream = callSession.getRemoteStream();
+const localStream = callSession.getLocalStream();
+
+// 控制通话
+callSession.toggleMute();   // 切换静音
+callSession.toggleVideo();  // 切换视频开关
+callSession.hangUp();       // 挂断
+
+// 监听通话状态
+callSession.onStateChange((state, reason) => {
+  console.log('通话状态:', state); // 'connecting' | 'connected' | 'ended'
+});
 ```
 
 ### 销毁实例 (destroy)
@@ -93,7 +129,7 @@ wrapper.destroy();
 
     const wrapper = new PeerJsWrapper();
 
-    wrapper.registerHandler('/api/hello', (data) => {
+    wrapper.registerHandler('/api/hello', (from, data) => {
       return { message: 'Hello from server', received: data };
     });
 
@@ -121,7 +157,7 @@ wrapper.destroy();
   <script>
     const wrapper = new PeerJsHttpUtil.PeerJsWrapper();
 
-    wrapper.registerHandler('/api/hello', (data) => {
+    wrapper.registerHandler('/api/hello', (from, data) => {
       return { message: 'Hello from server', received: data };
     });
 
@@ -197,15 +233,68 @@ wrapper.destroy();
 注册路径处理器。
 
 - `path`: 请求路径
-- `handler`: 处理器函数，接收请求数据，返回响应数据
+- `handler`: 处理器函数，签名 `(from: string, data?: unknown) => Promise<unknown> | unknown`
 
 ### `unregisterHandler(path: string): void`
 
 注销路径处理器。
 
+### `call(peerId: string, options?: CallOptions): Promise<CallSession>`
+
+发起语音/视频通话。
+
+- `peerId`: 对端设备 ID
+- `options`: 通话选项
+  - `video`: 是否启用视频（默认 false）
+  - `metadata`: 自定义元数据
+- 返回: `CallSession` 通话会话对象
+
+### `onIncomingCall(listener: IncomingCallListener): void`
+
+注册来电监听器。
+
+- `listener`: 监听器函数，接收 `IncomingCallEvent` 对象
+
+### `offIncomingCall(listener: IncomingCallListener): void`
+
+移除来电监听器。
+
+### `getActiveCall(): CallSession | null`
+
+获取当前活跃的通话会话。
+
 ### `destroy(): void`
 
-关闭所有连接并销毁实例。
+关闭所有连接并销毁实例（会自动挂断活跃通话）。
+
+## CallSession 接口
+
+通话会话对象，用于控制通话。
+
+| 属性/方法 | 说明 |
+|-----------|------|
+| `peerId` | 对端的 Peer ID |
+| `hasVideo` | 是否包含视频 |
+| `isConnected` | 是否已连接 |
+| `getLocalStream()` | 获取本地媒体流 |
+| `getRemoteStream()` | 获取远程媒体流 |
+| `toggleMute()` | 切换静音状态，返回新的静音状态 |
+| `toggleVideo()` | 切换视频开关，返回新的视频状态 |
+| `hangUp()` | 挂断通话 |
+| `onStateChange(listener)` | 注册状态变化监听器 |
+| `offStateChange(listener)` | 移除状态变化监听器 |
+
+## IncomingCallEvent 接口
+
+来电事件对象。
+
+| 属性/方法 | 说明 |
+|-----------|------|
+| `from` | 呼叫者的 Peer ID |
+| `hasVideo` | 是否包含视频 |
+| `metadata` | 呼叫者传递的元数据 |
+| `answer()` | 接听来电，返回 `Promise<CallSession>` |
+| `reject()` | 拒绝来电 |
 
 ## E2E 测试
 
@@ -222,6 +311,7 @@ npm run test:e2e
 - CDN 版本 (UMD) 已内置 PeerJS，无需额外引入
 - NPM 版本需要单独安装 peerjs 依赖
 - **自动断线重连**：网络断开时会自动尝试重连（每秒重试一次）
+- **语音/视频通话**：同一时间只能有一个活跃通话，通话超时 30 秒无应答自动挂断
 
 ## 发布
 
