@@ -122,6 +122,20 @@ sx-peerjs-http-util/
   - CDN: `<script src="https://unpkg.com/sx-peerjs-http-util/dist/index.umd.js"></script>` (内置 PeerJS)
 - CDN 版本全局变量名：`PeerJsHttpUtil`
 
+### Demos 示例
+- **底层需求**：提供最小化示例代码，让用户快速了解如何使用各项功能
+- **Demo 目录结构**：
+  - `demos/text-chat/` - 文字传输最小示例
+  - `demos/file-transfer/` - 文件传输最小示例
+  - `demos/voice-call/` - 语音通话最小示例
+  - `demos/video-call/` - 视频通话最小示例
+- **身份选择功能**：Demo 支持内置身份（身份1、身份2，固定 PeerID）和自定义身份，方便测试时快速建立连接
+- **在线 Demo 地址**：
+  - https://anarckk.github.io/sx-peerjs-http-util/demos/text-chat/index.html
+  - https://anarckk.github.io/sx-peerjs-http-util/demos/file-transfer/index.html
+  - https://anarckk.github.io/sx-peerjs-http-util/demos/voice-call/index.html
+  - https://anarckk.github.io/sx-peerjs-http-util/demos/video-call/index.html
+
 ## 用户喜好
 
 - 使用 TypeScript 开发
@@ -130,6 +144,7 @@ sx-peerjs-http-util/
 - **测试自动化**：测试时如果发现服务未启动，AI 应该自己启动服务，职责是确保测试用例通过
 - 底层字段不应该入侵业务数据对象（如 `from` 应由底层传入，而非放在 data 里）
 - **CSS 简洁**：样式代码不要过于冗长，保持精简
+- **README 简洁**：README.md 里不要写 `本地运行 Demo`，直接提供在线 demo 链接即可
 
 ## 技术方法
 
@@ -218,7 +233,7 @@ sx-peerjs-http-util/
 
 ## 上次用户提示词分析时间
 
-2026-02-14 16:51
+2026-02-15 11:26
 
 ---
 
