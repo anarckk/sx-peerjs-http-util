@@ -9,8 +9,12 @@
     .row { margin: 10px 0; }
     label { display: block; margin-bottom: 4px; }
     input { width: 100%; box-sizing: border-box; padding: 8px; }
+    input[type="text"].hidden { display: none; }
     button { padding: 8px 16px; margin-right: 8px; cursor: pointer; }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-group { display: flex; gap: 8px; margin-bottom: 4px; }
+    .btn-group button { flex: 1; margin: 0; }
+    .btn-group button.active { background: #007bff; color: #fff; border-color: #007bff; }
     #peerId { background: #f0f0f0; padding: 8px; word-break: break-all; }
     #status { color: #666; margin: 10px 0; }
     #callUI { display: none; margin-top: 10px; }
@@ -25,13 +29,27 @@
   <h2>视频通话 Demo</h2>
 
   <div class="row">
+    <label>我的身份:</label>
+    <div class="btn-group" id="myIdentityGroup">
+      <button data-id="demo-peer-1">身份1</button>
+      <button data-id="demo-peer-2">身份2</button>
+      <button data-id="">自定义</button>
+    </div>
+  </div>
+
+  <div class="row">
     <label>我的 Peer ID:</label>
     <div id="peerId">连接中...</div>
   </div>
 
   <div class="row">
-    <label>对方 Peer ID:</label>
-    <input type="text" id="remotePeerId" placeholder="输入对方 Peer ID">
+    <label>通信目标:</label>
+    <div class="btn-group" id="targetGroup">
+      <button data-id="demo-peer-1">身份1</button>
+      <button data-id="demo-peer-2">身份2</button>
+      <button data-id="">自定义</button>
+    </div>
+    <input type="text" id="remotePeerId" placeholder="输入对方 Peer ID" class="hidden">
   </div>
 
   <div class="row">
@@ -62,8 +80,11 @@
 
   <script src="https://unpkg.com/sx-peerjs-http-util/dist/index.umd.js"></script>
   <script>
-    const wrapper = new PeerJsHttpUtil.PeerJsWrapper();
+    let myPeerId = null;
+    let wrapper = null;
 
+    const myIdentityGroup = document.getElementById('myIdentityGroup');
+    const targetGroup = document.getElementById('targetGroup');
     const peerIdEl = document.getElementById('peerId');
     const remotePeerIdEl = document.getElementById('remotePeerId');
     const callBtn = document.getElementById('callBtn');
@@ -82,18 +103,57 @@
     let currentSession = null;
     let incomingEvent = null;
 
-    // 初始化
-    wrapper.whenReady().then(() => {
-      peerIdEl.textContent = wrapper.getPeerId();
-      callBtn.disabled = false;
-    });
+    // 切换按钮组状态
+    function setButtonActive(group, activeBtn) {
+      group.querySelectorAll('button').forEach(btn => btn.classList.remove('active'));
+      activeBtn.classList.add('active');
+    }
 
-    // 监听来电
-    wrapper.onIncomingCall((event) => {
-      incomingEvent = event;
-      callerIdEl.textContent = event.from;
-      incomingCallEl.style.display = 'block';
-    });
+    // 我的身份选择
+    myIdentityGroup.onclick = (e) => {
+      if (e.target.tagName !== 'BUTTON') return;
+      setButtonActive(myIdentityGroup, e.target);
+
+      const selectedId = e.target.dataset.id;
+      myPeerId = selectedId || null;
+
+      if (wrapper) wrapper.destroy();
+      initWrapper();
+    };
+
+    // 通信目标选择
+    targetGroup.onclick = (e) => {
+      if (e.target.tagName !== 'BUTTON') return;
+      setButtonActive(targetGroup, e.target);
+
+      const selectedId = e.target.dataset.id;
+      if (selectedId) {
+        remotePeerIdEl.value = selectedId;
+        remotePeerIdEl.classList.add('hidden');
+      } else {
+        remotePeerIdEl.value = '';
+        remotePeerIdEl.classList.remove('hidden');
+      }
+    };
+
+    // 初始化 wrapper
+    function initWrapper() {
+      wrapper = new PeerJsHttpUtil.PeerJsWrapper(myPeerId);
+      peerIdEl.textContent = '连接中...';
+      callBtn.disabled = true;
+
+      wrapper.whenReady().then(() => {
+        peerIdEl.textContent = wrapper.getPeerId();
+        callBtn.disabled = false;
+      });
+
+      // 监听来电
+      wrapper.onIncomingCall((event) => {
+        incomingEvent = event;
+        callerIdEl.textContent = event.from;
+        incomingCallEl.style.display = 'block';
+      });
+    }
 
     // 发起通话
     callBtn.onclick = async () => {
@@ -132,13 +192,9 @@
       callUIEl.style.display = 'block';
       callBtn.disabled = true;
 
-      // 显示本地视频
       const localStream = currentSession.getLocalStream();
-      if (localStream) {
-        localVideo.srcObject = localStream;
-      }
+      if (localStream) localVideo.srcObject = localStream;
 
-      // 显示远程视频（可能还没到达，在状态变化时再获取）
       const remoteStream = currentSession.getRemoteStream();
       if (remoteStream) {
         remoteVideo.srcObject = remoteStream;
@@ -147,14 +203,10 @@
         statusEl.textContent = '连接中...';
       }
 
-      // 监听状态变化
       currentSession.onStateChange((state) => {
         if (state === 'connected') {
-          // 远程流到达
           const stream = currentSession.getRemoteStream();
-          if (stream) {
-            remoteVideo.srcObject = stream;
-          }
+          if (stream) remoteVideo.srcObject = stream;
           statusEl.textContent = '通话中';
         } else if (state === 'ended') {
           onCallEnded();
@@ -197,6 +249,10 @@
         onCallEnded();
       }
     };
+
+    // 默认选择身份1，目标身份2
+    myIdentityGroup.querySelector('button[data-id="demo-peer-1"]').click();
+    targetGroup.querySelector('button[data-id="demo-peer-2"]').click();
   </script>
 </body>
 </html>

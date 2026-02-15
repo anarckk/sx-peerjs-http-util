@@ -8,9 +8,13 @@
     body { font-family: sans-serif; max-width: 500px; margin: 20px auto; padding: 0 10px; }
     .row { margin: 10px 0; }
     label { display: block; margin-bottom: 4px; }
-    input[type="text"] { width: 100%; box-sizing: border-box; padding: 8px; }
+    input { width: 100%; box-sizing: border-box; padding: 8px; }
+    input[type="text"].hidden { display: none; }
     button { padding: 8px 16px; cursor: pointer; }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-group { display: flex; gap: 8px; margin-bottom: 4px; }
+    .btn-group button { flex: 1; }
+    .btn-group button.active { background: #007bff; color: #fff; border-color: #007bff; }
     #peerId { background: #f0f0f0; padding: 8px; word-break: break-all; }
     #fileInput { display: none; }
     #progress { margin: 10px 0; }
@@ -24,13 +28,27 @@
   <h2>文件传输 Demo</h2>
 
   <div class="row">
+    <label>我的身份:</label>
+    <div class="btn-group" id="myIdentityGroup">
+      <button data-id="demo-peer-1">身份1</button>
+      <button data-id="demo-peer-2">身份2</button>
+      <button data-id="">自定义</button>
+    </div>
+  </div>
+
+  <div class="row">
     <label>我的 Peer ID:</label>
     <div id="peerId">连接中...</div>
   </div>
 
   <div class="row">
-    <label>对方 Peer ID:</label>
-    <input type="text" id="remotePeerId" placeholder="输入对方 Peer ID">
+    <label>通信目标:</label>
+    <div class="btn-group" id="targetGroup">
+      <button data-id="demo-peer-1">身份1</button>
+      <button data-id="demo-peer-2">身份2</button>
+      <button data-id="">自定义</button>
+    </div>
+    <input type="text" id="remotePeerId" placeholder="输入对方 Peer ID" class="hidden">
   </div>
 
   <div class="row">
@@ -47,8 +65,11 @@
 
   <script src="https://unpkg.com/sx-peerjs-http-util/dist/index.umd.js"></script>
   <script>
-    const wrapper = new PeerJsHttpUtil.PeerJsWrapper();
+    let myPeerId = null;
+    let wrapper = null;
 
+    const myIdentityGroup = document.getElementById('myIdentityGroup');
+    const targetGroup = document.getElementById('targetGroup');
     const peerIdEl = document.getElementById('peerId');
     const remotePeerIdEl = document.getElementById('remotePeerId');
     const selectBtn = document.getElementById('selectBtn');
@@ -57,10 +78,71 @@
     const progressText = document.getElementById('progressText');
     const logEl = document.getElementById('log');
 
-    // 初始化
-    wrapper.whenReady().then(() => {
-      peerIdEl.textContent = wrapper.getPeerId();
-    });
+    // 切换按钮组状态
+    function setButtonActive(group, activeBtn) {
+      group.querySelectorAll('button').forEach(btn => btn.classList.remove('active'));
+      activeBtn.classList.add('active');
+    }
+
+    // 我的身份选择
+    myIdentityGroup.onclick = (e) => {
+      if (e.target.tagName !== 'BUTTON') return;
+      setButtonActive(myIdentityGroup, e.target);
+
+      const selectedId = e.target.dataset.id;
+      myPeerId = selectedId || null;
+
+      if (wrapper) wrapper.destroy();
+      initWrapper();
+    };
+
+    // 通信目标选择
+    targetGroup.onclick = (e) => {
+      if (e.target.tagName !== 'BUTTON') return;
+      setButtonActive(targetGroup, e.target);
+
+      const selectedId = e.target.dataset.id;
+      if (selectedId) {
+        remotePeerIdEl.value = selectedId;
+        remotePeerIdEl.classList.add('hidden');
+      } else {
+        remotePeerIdEl.value = '';
+        remotePeerIdEl.classList.remove('hidden');
+      }
+    };
+
+    // 初始化 wrapper
+    function initWrapper() {
+      wrapper = new PeerJsHttpUtil.PeerJsWrapper(myPeerId);
+      peerIdEl.textContent = '连接中...';
+
+      wrapper.whenReady().then(() => {
+        peerIdEl.textContent = wrapper.getPeerId();
+      });
+
+      // 注册文件接收处理器
+      wrapper.registerHandler('/file', (from, data) => {
+        const { name, type, content } = data;
+
+        const byteChars = atob(content);
+        const byteNums = new Array(byteChars.length);
+        for (let i = 0; i < byteChars.length; i++) {
+          byteNums[i] = byteChars.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNums);
+        const blob = new Blob([byteArray], { type });
+
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = name;
+        a.click();
+        URL.revokeObjectURL(url);
+
+        log(`收到文件: ${name} (${(byteArray.length / 1024).toFixed(1)} KB)`);
+        return { ok: true };
+      });
+    }
 
     // 日志
     function log(msg) {
@@ -76,31 +158,6 @@
       progressText.textContent = text || '';
     }
 
-    // 注册文件接收处理器
-    wrapper.registerHandler('/file', (from, data) => {
-      const { name, type, content } = data;
-
-      // content 是 base64 编码的文件内容
-      const byteChars = atob(content);
-      const byteNums = new Array(byteChars.length);
-      for (let i = 0; i < byteChars.length; i++) {
-        byteNums[i] = byteChars.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNums);
-      const blob = new Blob([byteArray], { type });
-
-      // 触发下载
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = name;
-      a.click();
-      URL.revokeObjectURL(url);
-
-      log(`收到文件: ${name} (${(byteArray.length / 1024).toFixed(1)} KB)`);
-      return { ok: true };
-    });
-
     // 选择文件
     selectBtn.onclick = () => fileInput.click();
 
@@ -112,7 +169,6 @@
       const remoteId = remotePeerIdEl.value.trim();
       if (!remoteId) return alert('请输入对方 Peer ID');
 
-      // 限制文件大小（直接传输建议 <10MB）
       if (file.size > 10 * 1024 * 1024) {
         return alert('文件过大，建议使用分片传输（此 demo 仅演示直接传输）');
       }
@@ -121,7 +177,6 @@
         setProgress(10, '读取文件中...');
         log(`发送文件: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`);
 
-        // 读取文件为 base64
         const reader = new FileReader();
         reader.onload = async () => {
           const base64 = reader.result.split(',')[1];
@@ -144,6 +199,10 @@
         log('发送失败: ' + err.message);
       }
     };
+
+    // 默认选择身份1，目标身份2
+    myIdentityGroup.querySelector('button[data-id="demo-peer-1"]').click();
+    targetGroup.querySelector('button[data-id="demo-peer-2"]').click();
   </script>
 </body>
 </html>

@@ -267,8 +267,7 @@ export class PeerJsWrapper {
    */
   private debugLog(obj: string, event: string, data?: unknown): void {
     if (this.isDebug) {
-      const dataStr = data !== undefined ? (typeof data === 'object' ? JSON.stringify(data) : String(data)) : '';
-      console.log(`${obj} ${event} ${dataStr}`);
+      console.log(obj, event, data);
     }
   }
 
