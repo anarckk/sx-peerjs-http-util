@@ -2,6 +2,17 @@
 
 一个浏览器端库，将 PeerJS 封装成简单易用的类似 HTTP 的 API，并支持语音/视频通话。
 
+## 在线 Demo
+
+| Demo | 说明 |
+|------|------|
+| [文字传输](https://anarckk.github.io/sx-peerjs-http-util/demos/text-chat/index.html) | P2P 即时聊天 |
+| [文件传输](https://anarckk.github.io/sx-peerjs-http-util/demos/file-transfer/index.html) | 点对点文件传输 |
+| [语音通话](https://anarckk.github.io/sx-peerjs-http-util/demos/voice-call/index.html) | 一对一语音通话 |
+| [视频通话](https://anarckk.github.io/sx-peerjs-http-util/demos/video-call/index.html) | 一对一视频通话 |
+
+> **提示**：打开两个浏览器窗口，分别选择"身份1"和"身份2"即可开始通信，无需手动复制 Peer ID。
+
 ## 特性
 
 - 简单的请求-响应 API，类似 HTTP
@@ -112,93 +123,6 @@ callSession.hangUp();       // 挂断
 wrapper.destroy();
 ```
 
-## 完整示例
-
-### NPM 方式 - 服务器端
-
-```html
-<!DOCTYPE html>
-<html>
-<head>
-  <script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
-</head>
-<body>
-  <h1>Server</h1>
-  <div id="peer-id"></div>
-
-  <script type="module">
-    import { PeerJsWrapper } from 'https://unpkg.com/sx-peerjs-http-util/dist/index.esm.js';
-
-    const wrapper = new PeerJsWrapper();
-
-    wrapper.registerHandler('/api/hello', (from, data) => {
-      return { message: 'Hello from server', received: data };
-    });
-
-    wrapper.whenReady().then(() => {
-      document.getElementById('peer-id').textContent = `Peer ID: ${wrapper.getPeerId()}`;
-    });
-  </script>
-</body>
-</html>
-```
-
-### CDN 方式 - 服务器端
-
-```html
-<!DOCTYPE html>
-<html>
-<head>
-  <!-- CDN 版本已内置 PeerJS -->
-  <script src="https://unpkg.com/sx-peerjs-http-util/dist/index.umd.js"></script>
-</head>
-<body>
-  <h1>Server</h1>
-  <div id="peer-id"></div>
-
-  <script>
-    const wrapper = new PeerJsHttpUtil.PeerJsWrapper();
-
-    wrapper.registerHandler('/api/hello', (from, data) => {
-      return { message: 'Hello from server', received: data };
-    });
-
-    wrapper.whenReady().then(() => {
-      document.getElementById('peer-id').textContent = `Peer ID: ${wrapper.getPeerId()}`;
-    });
-  </script>
-</body>
-</html>
-```
-
-### 客户端
-
-```html
-<!DOCTYPE html>
-<html>
-<head>
-  <script src="https://unpkg.com/sx-peerjs-http-util/dist/index.umd.js"></script>
-</head>
-<body>
-  <h1>Client</h1>
-  <button onclick="sendRequest()">Send Request</button>
-
-  <script>
-    const wrapper = new PeerJsHttpUtil.PeerJsWrapper();
-
-    async function sendRequest() {
-      try {
-        const data = await wrapper.send('server-peer-id', '/api/hello', { test: 'data' });
-        console.log('Response:', data);
-      } catch (err) {
-        console.error('Error:', err.message);
-      }
-    }
-  </script>
-</body>
-</html>
-```
-
 ## API 参考
 
 ### `new PeerJsWrapper(peerId?: string, isDebug?: boolean, server?: ServerConfig)`
@@ -297,23 +221,6 @@ wrapper.destroy();
 | `metadata` | 呼叫者传递的元数据 |
 | `answer()` | 接听来电，返回 `Promise<CallSession>` |
 | `reject()` | 拒绝来电 |
-
-## Demo 示例
-
-项目包含四个最小示例（CDN 引入方式）：
-
-| Demo | 说明 |
-|------|------|
-| `demos/text-chat/` | 文字传输 |
-| `demos/file-transfer/` | 文件传输 |
-| `demos/voice-call/` | 语音通话 |
-| `demos/video-call/` | 视频通话 |
-
-运行方式：
-```bash
-npx serve
-# 然后访问 http://localhost:3000/demos/video-call/
-```
 
 ## E2E 测试
 
