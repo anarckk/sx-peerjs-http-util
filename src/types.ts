@@ -19,6 +19,65 @@ export interface Response {
 }
 
 /**
+ * 服务器配置（PeerJS 信令服务器）
+ */
+export interface ServerConfig {
+  host?: string;
+  port?: number;
+  path?: string;
+  secure?: boolean;
+}
+
+/**
+ * 路由表条目
+ */
+export interface RouteEntry {
+  /** 目标节点 */
+  target: string;
+  /** 下一跳节点 */
+  nextHop: string;
+  /** 跳数 */
+  hops: number;
+  /** 通过哪个节点学到的 */
+  via: string;
+  /** 学习时间戳 */
+  timestamp: number;
+}
+
+/**
+ * 中继配置
+ */
+export interface RelayConfig {
+  /** 最大中继节点数量（默认 5） */
+  maxRelayNodes?: number;
+}
+
+/**
+ * 中继消息格式
+ */
+export interface RelayMessage {
+  /** 消息类型 */
+  type: 'relay-request' | 'relay-response' | 'route-update';
+  /** 消息 ID */
+  id: string;
+  /** 原始目标节点 */
+  originalTarget: string;
+  /** 已走过的中继路径 */
+  relayPath: string[];
+  /** 剩余可用转发节点列表 */
+  forwardPath: string[];
+  /** 请求数据 */
+  request?: Request;
+  /** 响应数据 */
+  response?: Response;
+  /** 路由更新信息 */
+  routeUpdate?: {
+    /** 可达节点列表 */
+    reachableNodes: string[];
+  };
+}
+
+/**
  * 简化处理器函数类型（直接返回数据，自动装箱为 Response）
  * @param from 发送者的 Peer ID
  * @param data 请求数据
