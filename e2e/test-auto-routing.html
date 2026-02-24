@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PeerJS Auto Routing Test</title>
+  <script src="../dist/index.umd.js"></script>
+  <style>
+    body { font-family: monospace; padding: 20px; }
+    .node { border: 1px solid #ccc; padding: 10px; margin: 10px 0; }
+    .node h3 { margin: 0 0 10px 0; }
+    button { margin: 5px; padding: 5px 10px; }
+    #log { max-height: 300px; overflow-y: auto; border: 1px solid #ccc; padding: 10px; margin-top: 20px; }
+    .success { color: green; }
+    .error { color: red; }
+    .info { color: blue; }
+  </style>
+</head>
+<body>
+  <h1>PeerJS Auto Routing Test</h1>
+  
+  <div id="nodes"></div>
+  
+  <h2>Controls</h2>
+  <button id="addNode">Add Node</button>
+  <button id="clearLog">Clear Log</button>
+  
+  <div id="log"></div>
+  
+  <script>
+    const serverConfig = {
+      host: 'localhost',
+      port: 9000,
+      path: '/peerjs',
+      secure: false
+    };
+    
+    let nodeCount = 0;
+    const nodes = [];
+    let peerReady = false;
+    let peerId = null;
+    
+    function log(message, type = 'info') {
+      const logDiv = document.getElementById('log');
+      const p = document.createElement('p');
+      p.className = type;
+      p.textContent = new Date().toISOString() + ' - ' + message;
+      logDiv.appendChild(p);
+      console.log(message);
+    }
+    
+    function createNode(id) {
+      const wrapper = new PeerJsHttpUtil.PeerJsWrapper(id, true, serverConfig);
+      
+      wrapper.registerHandler('/api/test', (from, data) => {
+        return { echo: data, from };
+      });
+      
+      wrapper.registerHandler('/api/whoami', (from) => {
+        return { id: wrapper.getPeerId() };
+      });
+      
+      const nodeDiv = document.createElement('div');
+      nodeDiv.className = 'node';
+      nodeDiv.id = 'node-' + id;
+      nodeDiv.innerHTML = `
+        <h3>Node: ${id}</h3>
+        <div class="status">Connecting...</div>
+        <div class="known-nodes">Known nodes: </div>
+        <button class="send-btn" data-target="" data-path="/api/test" data-data="hello">Send Test</button>
+        <button class="relay-btn" data-target="" data-path="/api/test" data-data="hello" data-relays="">Auto Relay</button>
+        <div class="routing-table">Routing table: empty</div>
+      `;
+      
+      document.getElementById('nodes').appendChild(nodeDiv);
+      
+      wrapper.whenReady().then(() => {
+        nodeDiv.querySelector('.status').textContent = 'Ready: ' + wrapper.getPeerId();
+        log('Node ' + id + ' ready: ' + wrapper.getPeerId(), 'success');
+        updateKnownNodes();
+        updateRoutingTable();
+      }).catch((err) => {
+        nodeDiv.querySelector('.status').textContent = 'Error: ' + err.message;
+        log('Node ' + id + ' error: ' + err.message, 'error');
+      });
+      
+      function updateKnownNodes() {
+        const known = wrapper.getKnownNodes();
+        nodeDiv.querySelector('.known-nodes').textContent = 'Known nodes: ' + (known.length ? known.join(', ') : 'none');
+      }
+      
+      function updateRoutingTable() {
+        const rt = wrapper.getRoutingTable();
+        let tableStr = 'Routing table: ';
+        const entries = [];
+        for (const [target, entry] of Object.entries(rt)) {
+          const hops = entry.nextHops.map(nh => `${nh.nodeId}(${nh.latency}ms)`).join(',');
+          entries.push(`${target}->[${hops}](${entry.hops} hops)`);
+        }
+        tableStr += entries.length ? entries.join(', ') : 'empty';
+        nodeDiv.querySelector('.routing-table').textContent = tableStr;
+      }
+      
+      const nodeObj = {
+        id,
+        wrapper,
+        updateKnownNodes,
+        updateRoutingTable,
+        nodeDiv
+      };
+      nodes.push(nodeObj);
+      
+      return nodeObj;
+    }
+    
+    document.getElementById('addNode').addEventListener('click', () => {
+      const id = 'node-' + (++nodeCount);
+      createNode(id);
+    });
+    
+    document.getElementById('clearLog').addEventListener('click', () => {
+      document.getElementById('log').innerHTML = '';
+    });
+    
+    document.getElementById('nodes').addEventListener('click', async (e) => {
+      if (e.target.classList.contains('send-btn')) {
+        const sourceId = e.target.closest('.node').id.replace('node-', '');
+        const sourceNode = nodes.find(n => n.id === sourceId);
+        if (!sourceNode) return;
+        
+        const targetId = prompt('Enter target node ID:');
+        if (!targetId) return;
+        
+        const targetNode = nodes.find(n => n.id === targetId);
+        if (!targetNode) {
+          log('Target node not found: ' + targetId, 'error');
+          return;
+        }
+        
+        try {
+          const result = await sourceNode.wrapper.send(
+            targetNode.wrapper.getPeerId(),
+            '/api/test',
+            { test: 'direct' }
+          );
+          log('Send success: ' + JSON.stringify(result), 'success');
+          sourceNode.updateKnownNodes();
+          sourceNode.updateRoutingTable();
+        } catch (err) {
+          log('Send failed: ' + err.message, 'error');
+        }
+      }
+      
+      if (e.target.classList.contains('relay-btn')) {
+        const sourceId = e.target.closest('.node').id.replace('node-', '');
+        const sourceNode = nodes.find(n => n.id === sourceId);
+        if (!sourceNode) return;
+        
+        const targetId = prompt('Enter target node ID:');
+        if (!targetId) return;
+        
+        const targetNode = nodes.find(n => n.id === targetId);
+        if (!targetNode) {
+          log('Target node not found: ' + targetId, 'error');
+          return;
+        }
+        
+        try {
+          const result = await sourceNode.wrapper.send(
+            targetNode.wrapper.getPeerId(),
+            '/api/test',
+            { test: 'auto-relay' }
+          );
+          log('Auto relay success: ' + JSON.stringify(result), 'success');
+          sourceNode.updateKnownNodes();
+          sourceNode.updateRoutingTable();
+        } catch (err) {
+          log('Auto relay failed: ' + err.message, 'error');
+        }
+      }
+    });
+    
+    const testWrapper = new PeerJsHttpUtil.PeerJsWrapper('test-auto-routing-' + Date.now(), true, serverConfig);
+    testWrapper.registerHandler('/api/test', (from, data) => {
+      return { echo: data, from };
+    });
+    
+    testWrapper.whenReady().then(() => {
+      peerReady = true;
+      peerId = testWrapper.getPeerId();
+      log('Test wrapper ready: ' + peerId, 'success');
+    }).catch((err) => {
+      log('Test wrapper error: ' + err.message, 'error');
+    });
+    
+    window.testWrapper = testWrapper;
+    window.peerReady = peerReady;
+    window.peerId = peerId;
+    window.testApi = {
+      createNode,
+      getNodes: () => nodes,
+      getTestWrapper: () => testWrapper,
+      log
+    };
+  </script>
+</body>
+</html>

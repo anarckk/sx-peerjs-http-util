@@ -125,6 +125,7 @@ export class PeerJsWrapper {
       getMyPeerId: () => this.myPeerId,
       getPeerInstance: () => this.peerInstance,
       debugLog: this.debugLog.bind(this),
+      sendRelayMessage: (targetId: string, message: RelayMessage) => this.sendRelayMessage(targetId, message),
     };
 
     this.routingManager = new RoutingManager(callbacks, relayConfig);
@@ -256,8 +257,328 @@ export class PeerJsWrapper {
     });
   }
 
-  relaySend(targetId: string, path: string, data: unknown, relayNodes: string[]): Promise<unknown> {
-    if (relayNodes.length === 0) {
+  getRoutingTable(): Record<string, RouteEntry> {
+    return this.routingManager.getRoutingTable();
+  }
+
+  getKnownNodes(): string[] {
+    return this.routingManager.getKnownNodes();
+  }
+
+  /**
+   * 发送中继消息的辅助方法
+   * @param targetId 目标节点 ID
+   * @param message 中继消息
+   */
+  private sendRelayMessage(targetId: string, message: RelayMessage): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (!this.peerInstance) {
+        reject(new Error('Peer instance not available'));
+        return;
+      }
+
+      const conn = this.peerInstance.connect(targetId, { reliable: true });
+      const timeout = setTimeout(() => {
+        conn.close();
+        reject(new Error(`Send to ${targetId} timeout`));
+      }, 10000);
+
+      conn.on('open', () => {
+        conn.send(message);
+        clearTimeout(timeout);
+        conn.close();
+        resolve();
+      });
+
+      conn.on('error', () => {
+        clearTimeout(timeout);
+        reject(new Error(`Send to ${targetId} failed`));
+      });
+
+      conn.on('close', () => {
+        clearTimeout(timeout);
+        resolve();
+      });
+    });
+  }
+
+  /**
+   * 尝试直连目标节点
+   * @param targetId 目标节点 ID
+   * @param path 请求路径
+   * @param data 请求数据
+   * @param requestId 请求 ID
+   * @returns Promise<unknown> - 响应数据
+   */
+  private tryDirectConnect(targetId: string, path: string, data: unknown, requestId: string): Promise<unknown> {
+    return new Promise((resolve, reject) => {
+      if (!this.peerInstance) {
+        reject(new Error('Peer instance not available'));
+        return;
+      }
+
+      const startTime = Date.now();
+      const conn = this.peerInstance.connect(targetId, { reliable: true });
+      let resolved = false;
+
+      const timeout = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          conn.close();
+          reject(new Error(`Request timeout: ${targetId}${path}`));
+        }
+      }, 30000);
+
+      conn.on('open', () => {
+        const latency = Date.now() - startTime;
+        this.debugLog('Conn', 'open', { peer: targetId, latency });
+
+        const request: Request = { path, data };
+        const message: InternalMessage = {
+          type: 'request',
+          id: requestId,
+          request,
+        };
+        conn.send(message);
+      });
+
+      conn.on('data', (responseData: unknown) => {
+        this.debugLog('Conn', 'data', { peer: targetId, data: responseData });
+        const message = responseData as InternalMessage;
+        if (message.type === 'response' && message.id === requestId) {
+          if (!resolved) {
+            resolved = true;
+            clearTimeout(timeout);
+
+            const response = message.response!;
+            if (response.status < 200 || response.status >= 300) {
+              conn.close();
+              reject(new Error(`Request failed: ${response.status} ${JSON.stringify(response.data)}`));
+            } else {
+              const latency = Date.now() - startTime;
+              this.routingManager.recordDirectNode(targetId, latency);
+              this.routingManager.broadcastRouteUpdate();
+              resolve(response.data);
+            }
+            conn.close();
+          }
+        }
+      });
+
+      conn.on('error', (err) => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timeout);
+          this.debugLog('Conn', 'error', { peer: targetId, error: err });
+          reject(err);
+        }
+      });
+
+      conn.on('close', () => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timeout);
+          this.debugLog('Conn', 'close', targetId);
+          reject(new Error('Connection closed'));
+        }
+      });
+    });
+  }
+
+  /**
+   * 通过中继节点转发请求
+   * @param nextHopId 下一跳节点 ID
+   * @param targetId 原始目标节点 ID
+   * @param path 请求路径
+   * @param data 请求数据
+   * @returns Promise<unknown> - 响应数据
+   */
+  private relayVia(nextHopId: string, targetId: string, path: string, data: unknown): Promise<unknown> {
+    return new Promise((resolve, reject) => {
+      this.debugLog('PeerJsWrapper', 'relayVia', { targetId, nextHop: nextHopId });
+
+      this.waitForReady()
+        .then(() => {
+          if (!this.peerInstance) {
+            reject(new Error('Peer instance not available'));
+            return;
+          }
+
+          const conn = this.peerInstance.connect(nextHopId, { reliable: true });
+          const startTime = Date.now();
+
+          const timeout = setTimeout(() => {
+            conn.close();
+            reject(new Error(`Relay timeout: ${nextHopId}${path}`));
+          }, 30000);
+
+          conn.on('open', () => {
+            this.debugLog('Conn', 'open', nextHopId);
+
+            const request: Request = { path, data };
+            const message: RelayMessage = {
+              type: 'relay-request',
+              id: `${this.myPeerId}-${Date.now()}-${Math.random()}`,
+              originalTarget: targetId,
+              relayPath: [this.myPeerId],
+              forwardPath: [],
+              request,
+            };
+            conn.send(message);
+          });
+
+          conn.on('data', (responseData: unknown) => {
+            const message = responseData as RelayMessage;
+
+            if (message.type === 'relay-response') {
+              clearTimeout(timeout);
+              conn.close();
+
+              const response = message.response;
+              if (response) {
+                if (response.status < 200 || response.status >= 300) {
+                  reject(new Error(`Relay failed: ${response.status} ${JSON.stringify(response.data)}`));
+                } else {
+                  const latency = Date.now() - startTime;
+                  this.routingManager.recordDirectNode(nextHopId, latency);
+                  this.routingManager.broadcastRouteUpdate();
+                  resolve(response.data);
+                }
+              }
+            } else if (message.type === 'route-update') {
+              this.routingManager.handleRouteUpdate(nextHopId, message);
+            } else if (message.type === 'route-query') {
+              this.routingManager.handleRouteQuery(nextHopId, message);
+            } else if (message.type === 'route-response') {
+              this.routingManager.handleRouteResponse(nextHopId, message);
+            }
+          });
+
+          conn.on('error', (err) => {
+            this.debugLog('Conn', 'error', { peer: nextHopId, error: err });
+            clearTimeout(timeout);
+            reject(err);
+          });
+
+          conn.on('close', () => {
+            this.debugLog('Conn', 'close', nextHopId);
+            clearTimeout(timeout);
+            reject(new Error('Relay connection closed'));
+          });
+        })
+        .catch(reject);
+    });
+  }
+
+  /**
+   * 自动路由发送
+   * 1. 优先尝试直连
+   * 2. 直连失败则查路由表，按延迟排序尝试下一跳
+   * 3. 路由表为空则执行路由发现
+   * @param peerId 目标节点 ID
+   * @param path 请求路径
+   * @param data 请求数据
+   * @returns Promise<unknown> - 响应数据
+   */
+  send(peerId: string, path: string, data?: unknown): Promise<unknown> {
+    const requestId = `${this.myPeerId}-${Date.now()}-${Math.random()}`;
+    return new Promise((resolve, reject) => {
+      this.debugLog('PeerJsWrapper', 'send', { peerId, path, data });
+
+      this.tryDirectConnect(peerId, path, data, requestId)
+        .then(resolve)
+        .catch((directErr) => {
+          this.debugLog('PeerJsWrapper', 'directFailed', { peerId, error: directErr.message });
+
+          const errorMsg = directErr.message;
+          const isHttpError = errorMsg.includes('Request failed:') || errorMsg.includes('404') || errorMsg.includes('500');
+          const isConnectionError = errorMsg.includes('timeout') || errorMsg.includes('Connection closed') || errorMsg.includes('Peer instance not available');
+          
+          if (isHttpError) {
+            reject(directErr);
+            return;
+          }
+
+          if (!isConnectionError) {
+            reject(directErr);
+            return;
+          }
+
+          const nextHops = this.routingManager.getNextHopsToTarget(peerId);
+          
+          if (nextHops.length > 0) {
+            this.tryRelayChain(peerId, path, data, nextHops, 0)
+              .then(resolve)
+              .catch((relayErr) => {
+                this.debugLog('PeerJsWrapper', 'relayFailed', { peerId, error: relayErr.message });
+                this.performRouteDiscovery(peerId, path, data, requestId)
+                  .then(resolve)
+                  .catch(reject);
+              });
+          } else {
+            this.debugLog('PeerJsWrapper', 'noRoute', 'performing route discovery');
+            this.performRouteDiscovery(peerId, path, data, requestId)
+              .then(resolve)
+              .catch(reject);
+          }
+        });
+    });
+  }
+
+  /**
+   * 尝试通过中继链转发
+   * @param targetId 目标节点 ID
+   * @param path 请求路径
+   * @param data 请求数据
+   * @param nextHops 下一跳列表
+   * @param index 当前尝试的下一跳索引
+   * @returns Promise<unknown>
+   */
+  private tryRelayChain(targetId: string, path: string, data: unknown, nextHops: { nodeId: string; latency: number }[], index: number): Promise<unknown> {
+    if (index >= nextHops.length) {
+      return Promise.reject(new Error('All relay nodes failed'));
+    }
+
+    const nextHop = nextHops[index];
+    this.debugLog('PeerJsWrapper', 'tryRelay', { targetId, nextHop: nextHop.nodeId, latency: nextHop.latency });
+
+    return this.relayVia(nextHop.nodeId, targetId, path, data).catch(() => {
+      return this.tryRelayChain(targetId, path, data, nextHops, index + 1);
+    });
+  }
+
+  /**
+   * 执行路由发现
+   * @param targetId 目标节点 ID
+   * @param path 请求路径
+   * @param data 请求数据
+   * @param requestId 请求 ID
+   * @returns Promise<unknown>
+   */
+  private async performRouteDiscovery(targetId: string, path: string, data: unknown, requestId: string): Promise<unknown> {
+    this.debugLog('PeerJsWrapper', 'routeDiscovery', { targetId });
+
+    const routeEntry = await this.routingManager.discoverRoute(targetId);
+
+    if (!routeEntry || routeEntry.nextHops.length === 0) {
+      throw new Error(`Cannot reach ${targetId}: no route found`);
+    }
+
+    this.debugLog('PeerJsWrapper', 'routeFound', { targetId, nextHops: routeEntry.nextHops });
+
+    return this.tryRelayChain(targetId, path, data, routeEntry.nextHops, 0);
+  }
+
+  /**
+   * 中继发送（兼容旧接口，内部调用 send）
+   * @param targetId 目标节点 ID
+   * @param path 请求路径
+   * @param data 请求数据
+   * @param relayNodes 手动指定的中继节点（可选，不指定则自动路由）
+   * @returns Promise<unknown>
+   */
+  relaySend(targetId: string, path: string, data: unknown, relayNodes?: string[]): Promise<unknown> {
+    if (!relayNodes || relayNodes.length === 0) {
       return this.send(targetId, path, data);
     }
 
@@ -330,96 +651,6 @@ export class PeerJsWrapper {
           });
         })
         .catch(reject);
-    });
-  }
-
-  getRoutingTable(): Record<string, RouteEntry> {
-    return this.routingManager.getRoutingTable();
-  }
-
-  getKnownNodes(): string[] {
-    return this.routingManager.getKnownNodes();
-  }
-
-  send(peerId: string, path: string, data?: unknown): Promise<unknown> {
-    return new Promise((resolve, reject) => {
-      this.debugLog('PeerJsWrapper', 'send', { peerId, path, data });
-
-      this.waitForReady()
-        .then(() => {
-          if (!this.peerInstance) {
-            reject(new Error('Peer instance not available'));
-            return;
-          }
-
-          const conn = this.peerInstance.connect(peerId, { reliable: true });
-
-          const timeout = setTimeout(() => {
-            conn.close();
-            reject(new Error(`Request timeout: ${peerId}${path}`));
-          }, 30000);
-
-          const requestId = `${this.myPeerId}-${Date.now()}-${Math.random()}`;
-          this.pendingRequests.set(requestId, { resolve, reject, timeout });
-
-          conn.on('open', () => {
-            this.debugLog('Conn', 'open', peerId);
-            const request: Request = { path, data };
-            const message: InternalMessage = {
-              type: 'request',
-              id: requestId,
-              request,
-            };
-            conn.send(message);
-          });
-
-          conn.on('data', (responseData: unknown) => {
-            this.debugLog('Conn', 'data', { peer: peerId, data: responseData });
-            const message = responseData as InternalMessage;
-            if (message.type === 'response' && message.id === requestId) {
-              const pending = this.pendingRequests.get(requestId);
-              if (pending) {
-                clearTimeout(pending.timeout);
-                this.pendingRequests.delete(requestId);
-
-                const response = message.response!;
-                if (response.status < 200 || response.status >= 300) {
-                  pending.reject(
-                    new Error(`Request failed: ${response.status} ${JSON.stringify(response.data)}`)
-                  );
-                } else {
-                  this.routingManager.recordSuccessfulNode(peerId);
-                  this.routingManager.broadcastRouteUpdate();
-                  pending.resolve(response.data);
-                }
-              }
-              conn.close();
-            }
-          });
-
-          conn.on('error', (err) => {
-            this.debugLog('Conn', 'error', { peer: peerId, error: err });
-            const pending = this.pendingRequests.get(requestId);
-            if (pending) {
-              clearTimeout(pending.timeout);
-              this.pendingRequests.delete(requestId);
-              pending.reject(err as Error);
-            }
-          });
-
-          conn.on('close', () => {
-            this.debugLog('Conn', 'close', peerId);
-            const pending = this.pendingRequests.get(requestId);
-            if (pending) {
-              clearTimeout(pending.timeout);
-              this.pendingRequests.delete(requestId);
-              pending.reject(new Error('Connection closed'));
-            }
-          });
-        })
-        .catch((err) => {
-          reject(err);
-        });
     });
   }
 

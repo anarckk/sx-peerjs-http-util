@@ -30,17 +30,38 @@ export interface ServerConfig {
 
 /**
  * 路由表条目
+ * 记录目标节点的可选下一跳列表，每个下一跳都有延迟信息
  */
 export interface RouteEntry {
   /** 目标节点 */
   target: string;
-  /** 下一跳节点 */
-  nextHop: string;
-  /** 跳数 */
+  /** 可选的下一跳列表（按延迟升序排列） */
+  nextHops: NextHop[];
+  /** 跳数（到目标的最小跳数） */
   hops: number;
-  /** 通过哪个节点学到的 */
-  via: string;
-  /** 学习时间戳 */
+  /** 更新时间戳 */
+  timestamp: number;
+}
+
+/**
+ * 下一跳信息
+ */
+export interface NextHop {
+  /** 下一跳节点 ID */
+  nodeId: string;
+  /** 到目标的延迟（毫秒） */
+  latency: number;
+}
+
+/**
+ * 直连节点延迟记录
+ */
+export interface DirectNodeLatency {
+  /** 节点 ID */
+  nodeId: string;
+  /** 直连延迟（毫秒） */
+  latency: number;
+  /** 更新时间戳 */
   timestamp: number;
 }
 
@@ -57,7 +78,7 @@ export interface RelayConfig {
  */
 export interface RelayMessage {
   /** 消息类型 */
-  type: 'relay-request' | 'relay-response' | 'route-update';
+  type: 'relay-request' | 'relay-response' | 'route-update' | 'route-query' | 'route-response';
   /** 消息 ID */
   id: string;
   /** 原始目标节点 */
@@ -74,6 +95,26 @@ export interface RelayMessage {
   routeUpdate?: {
     /** 可达节点列表 */
     reachableNodes: string[];
+  };
+  /** 路由查询信息 */
+  routeQuery?: {
+    /** 查询的原始发起者 */
+    queryOrigin: string;
+    /** 查询目标节点 */
+    targetNode: string;
+    /** 查询经过的路径（防止循环） */
+    queryPath: string[];
+  };
+  /** 路由查询响应信息 */
+  routeResponse?: {
+    /** 查询的原始发起者 */
+    queryOrigin: string;
+    /** 响应者节点 */
+    responder: string;
+    /** 目标节点 */
+    targetNode: string;
+    /** 到目标的延迟（毫秒） */
+    latency: number;
   };
 }
 
