@@ -139,6 +139,25 @@ export class PeerJsWrapper {
     this.connect();
   }
 
+  /**
+   * 创建实例并等待就绪（语法糖）
+   * @param peerId 可选的 Peer ID
+   * @param isDebug 是否开启调试模式
+   * @param server 可选的信令服务器配置
+   * @param relayConfig 可选的中继配置
+   * @returns Promise<PeerJsWrapper>
+   */
+  static async create(
+    peerId?: string,
+    isDebug?: boolean,
+    server?: ServerConfig,
+    relayConfig?: RelayConfig
+  ): Promise<PeerJsWrapper> {
+    const wrapper = new PeerJsWrapper(peerId, isDebug, server, relayConfig);
+    await wrapper.whenReady();
+    return wrapper;
+  }
+
   private debugLog(obj: string, event: string, data?: unknown): void {
     if (this.isDebug) {
       console.log(obj, event, data);
