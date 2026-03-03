@@ -32,6 +32,40 @@
 - [x] getRoutingTable 返回空路由表
 - [x] getKnownNodes 返回空列表
 
+## 通话功能测试 (test-call.spec.ts)
+- [x] getActiveCall 初始返回 null
+- [x] 应该监听通话状态变化
+- [x] 应该支持注册和注销来电监听器
+- [x] 来电监听器应该去重
+- [x] getPeerId 应该同步返回 Peer ID
+- [x] whenReady 应该等待连接就绪
+- [x] destroy 应该销毁实例
+
+## 文件传输测试 (test-file.spec.ts)
+- [x] 小文件应该直接传输
+- [x] 大文件应该分片传输
+- [x] 文件元信息应该正确传递
+
+## 调试模式测试 (test-debug.spec.ts)
+- [x] 调试模式应该输出日志
+- [x] 非调试模式不应该输出调试日志
+
+## 显式中继测试 (test-explicit-relay.spec.ts)
+- [x] relaySend 不指定中继节点应该直接发送
+- [x] relaySend 指定无效中继节点应该报错
+- [x] 中继路径错误应该正确传播
+
+## 响应状态码测试 (test-status-codes.spec.ts)
+- [x] 200 状态码应该正常返回数据
+- [x] 处理器返回错误响应对象应该抛出错误
+- [x] 请求超时应该抛出错误
+- [x] 连接到不存在的节点应该报错
+
+## 断线重连测试 (test-reconnect.spec.ts)
+- [x] destroy 应该销毁实例并取消重连
+- [x] 多次 destroy 不应该抛出错误
+- [x] 应该能监听断开连接事件
+
 **运行方式**：
 1. 启动私有信令服务器：`cd peerjs-server && node server.js`
 2. 启动 HTTP 服务器：`npx serve -l 8080`

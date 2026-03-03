@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PeerJS Debug Test</title>
+  <script src="../dist/index.umd.js"></script>
+</head>
+<body>
+  <h1>PeerJS Debug Test</h1>
+  <div id="peer-id">Connecting...</div>
+  <div id="log"></div>
+
+  <script>
+    const serverConfig = {
+      host: 'localhost',
+      port: 9000,
+      path: '/peerjs',
+      secure: false
+    };
+
+    const wrapper = new PeerJsHttpUtil.PeerJsWrapper(undefined, true, serverConfig);
+
+    wrapper.registerHandler('/api/test', (from, data) => {
+      return { echo: data };
+    });
+
+    window.testWrapper = wrapper;
+    window.peerReady = false;
+    window.peerId = null;
+
+    wrapper.whenReady().then(() => {
+      const id = wrapper.getPeerId();
+      window.peerReady = true;
+      window.peerId = id;
+      document.getElementById('peer-id').textContent = `Peer ID: ${id}`;
+      if (window.getPeerIdCallback) window.getPeerIdCallback(id);
+      log('Peer connected with ID: ' + id);
+    }).catch((err) => {
+      log('Peer error: ' + err.message);
+    });
+
+    function log(message) {
+      const logDiv = document.getElementById('log');
+      const p = document.createElement('p');
+      p.textContent = new Date().toISOString() + ' - ' + message;
+      logDiv.appendChild(p);
+    }
+  </script>
+</body>
+</html>

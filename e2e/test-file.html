@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PeerJS File Transfer Test</title>
+  <script src="../dist/index.umd.js"></script>
+</head>
+<body>
+  <h1>PeerJS File Transfer Test</h1>
+  <div id="peer-id">Connecting...</div>
+  <div id="log"></div>
+
+  <script>
+    const serverConfig = {
+      host: 'localhost',
+      port: 9000,
+      path: '/peerjs',
+      secure: false
+    };
+
+    const wrapper = new PeerJsHttpUtil.PeerJsWrapper(undefined, false, serverConfig);
+
+    const receivedFiles = new Map();
+
+    wrapper.registerHandler('/file', (from, data) => {
+      console.log('Received file:', data.name, data.size);
+      receivedFiles.set(data.fileId, {
+        name: data.name,
+        mimeType: data.mimeType,
+        size: data.size,
+        data: data.data,
+        receivedAt: Date.now()
+      });
+      return { success: true, fileId: data.fileId };
+    });
+
+    wrapper.registerHandler('/file/start', (from, data) => {
+      console.log('File start:', data.fileId, data.name);
+      receivedFiles.set(data.fileId, {
+        name: data.name,
+        mimeType: data.mimeType,
+        size: data.size,
+        chunks: [],
+        receivedAt: Date.now()
+      });
+      return { success: true, fileId: data.fileId };
+    });
+
+    wrapper.registerHandler('/file/chunk', (from, data) => {
+      const file = receivedFiles.get(data.fileId);
+      if (file) {
+        file.chunks = file.chunks || [];
+        file.chunks.push({ index: data.index, data: data.data });
+      }
+      return { success: true, fileId: data.fileId, index: data.index };
+    });
+
+    wrapper.registerHandler('/file/complete', (from, data) => {
+      const file = receivedFiles.get(data.fileId);
+      if (file && file.chunks) {
+        file.data = new Uint8Array(file.chunks.length * file.chunks[0].data.byteLength);
+        let offset = 0;
+        for (let i = 0; i < file.chunks.length; i++) {
+          file.data.set(new Uint8Array(file.chunks[i].data), offset);
+          offset += file.chunks[i].data.byteLength;
+        }
+        delete file.chunks;
+      }
+      console.log('File complete:', data.fileId);
+      return { success: true, fileId: data.fileId };
+    });
+
+    wrapper.registerHandler('/api/test', (from, data) => {
+      return { echo: data };
+    });
+
+    window.testWrapper = wrapper;
+    window.receivedFiles = receivedFiles;
+    window.peerReady = false;
+    window.peerId = null;
+
+    wrapper.whenReady().then(() => {
+      const id = wrapper.getPeerId();
+      window.peerReady = true;
+      window.peerId = id;
+      document.getElementById('peer-id').textContent = `Peer ID: ${id}`;
+      if (window.getPeerIdCallback) window.getPeerIdCallback(id);
+      log('Peer connected with ID: ' + id);
+    }).catch((err) => {
+      log('Peer error: ' + err.message);
+    });
+
+    function log(message) {
+      const logDiv = document.getElementById('log');
+      const p = document.createElement('p');
+      p.textContent = new Date().toISOString() + ' - ' + message;
+      logDiv.appendChild(p);
+    }
+  </script>
+</body>
+</html>
