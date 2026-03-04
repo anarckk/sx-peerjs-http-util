@@ -23,15 +23,11 @@ test('relaySend 不指定中继节点应该直接发送', async ({ context }) =>
   const pageA = await context.newPage();
   const pageB = await context.newPage();
 
-  await Promise.all([
-    pageA.goto('http://localhost:8080/e2e/test-auto-routing.html'),
-    pageB.goto('http://localhost:8080/e2e/test-auto-routing.html')
-  ]);
+  await pageA.goto('http://localhost:8080/e2e/test-auto-routing.html');
+  await pageB.goto('http://localhost:8080/e2e/test-auto-routing.html');
 
-  const [peerIdA, peerIdB] = await Promise.all([
-    pageA.evaluate(() => (window as any).testWrapper.whenReady().then(() => (window as any).testWrapper.getPeerId())),
-    pageB.evaluate(() => (window as any).testWrapper.whenReady().then(() => (window as any).testWrapper.getPeerId()))
-  ]);
+  const peerIdA = await pageA.evaluate(() => (window as any).testWrapper.whenReady().then(() => (window as any).testWrapper.getPeerId()));
+  const peerIdB = await pageB.evaluate(() => (window as any).testWrapper.whenReady().then(() => (window as any).testWrapper.getPeerId()));
 
   console.log('Peer IDs:', { A: peerIdA, B: peerIdB });
 
@@ -85,15 +81,11 @@ test('中继路径错误应该正确传播', async ({ context }) => {
   const pageA = await context.newPage();
   const pageB = await context.newPage();
 
-  await Promise.all([
-    pageA.goto('http://localhost:8080/e2e/test-auto-routing.html'),
-    pageB.goto('http://localhost:8080/e2e/test-auto-routing.html')
-  ]);
+  await pageA.goto('http://localhost:8080/e2e/test-auto-routing.html');
+  await pageB.goto('http://localhost:8080/e2e/test-auto-routing.html');
 
-  const [peerIdA, peerIdB] = await Promise.all([
-    pageA.evaluate(() => (window as any).testWrapper.whenReady().then(() => (window as any).testWrapper.getPeerId())),
-    pageB.evaluate(() => (window as any).testWrapper.whenReady().then(() => (window as any).testWrapper.getPeerId()))
-  ]);
+  const peerIdA = await pageA.evaluate(() => (window as any).testWrapper.whenReady().then(() => (window as any).testWrapper.getPeerId()));
+  const peerIdB = await pageB.evaluate(() => (window as any).testWrapper.whenReady().then(() => (window as any).testWrapper.getPeerId()));
 
   let errorMsg = '';
   try {

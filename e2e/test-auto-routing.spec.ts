@@ -53,7 +53,7 @@ test('应该记录直连节点及延迟', async ({ context }) => {
   // 获取 A 的直连节点列表（包含延迟信息）
   const directNodes = await pageA.evaluate(() => {
     const wrapper = (window as any).testWrapper;
-    return (wrapper as any).routingManager.getDirectNodes();
+    return (wrapper as any).router.getDirectNodes();
   });
 
   console.log('Direct nodes with latency:', directNodes);
@@ -79,19 +79,13 @@ test('应该通过路由表自动转发', async ({ context }) => {
   const pageB = await context.newPage();
   const pageC = await context.newPage();
 
-  // 并行加载三个页面
-  await Promise.all([
-    pageA.goto('http://localhost:8080/e2e/test-auto-routing.html'),
-    pageB.goto('http://localhost:8080/e2e/test-auto-routing.html'),
-    pageC.goto('http://localhost:8080/e2e/test-auto-routing.html')
-  ]);
+  await pageA.goto('http://localhost:8080/e2e/test-auto-routing.html');
+  await pageB.goto('http://localhost:8080/e2e/test-auto-routing.html');
+  await pageC.goto('http://localhost:8080/e2e/test-auto-routing.html');
 
-  // 获取三个节点的 Peer ID
-  const [peerIdA, peerIdB, peerIdC] = await Promise.all([
-    pageA.evaluate(() => (window as any).testWrapper.whenReady().then(() => (window as any).testWrapper.getPeerId())),
-    pageB.evaluate(() => (window as any).testWrapper.whenReady().then(() => (window as any).testWrapper.getPeerId())),
-    pageC.evaluate(() => (window as any).testWrapper.whenReady().then(() => (window as any).testWrapper.getPeerId()))
-  ]);
+  const peerIdA = await pageA.evaluate(() => (window as any).testWrapper.whenReady().then(() => (window as any).testWrapper.getPeerId()));
+  const peerIdB = await pageB.evaluate(() => (window as any).testWrapper.whenReady().then(() => (window as any).testWrapper.getPeerId()));
+  const peerIdC = await pageC.evaluate(() => (window as any).testWrapper.whenReady().then(() => (window as any).testWrapper.getPeerId()));
 
   console.log('Relay test Peer IDs:', { A: peerIdA, B: peerIdB, C: peerIdC });
 
@@ -130,17 +124,13 @@ test('应该支持多下一跳按延迟排序', async ({ context }) => {
   const pageB = await context.newPage();
   const pageC = await context.newPage();
 
-  await Promise.all([
-    pageA.goto('http://localhost:8080/e2e/test-auto-routing.html'),
-    pageB.goto('http://localhost:8080/e2e/test-auto-routing.html'),
-    pageC.goto('http://localhost:8080/e2e/test-auto-routing.html')
-  ]);
+  await pageA.goto('http://localhost:8080/e2e/test-auto-routing.html');
+  await pageB.goto('http://localhost:8080/e2e/test-auto-routing.html');
+  await pageC.goto('http://localhost:8080/e2e/test-auto-routing.html');
 
-  const [peerIdA, peerIdB, peerIdC] = await Promise.all([
-    pageA.evaluate(() => (window as any).testWrapper.whenReady().then(() => (window as any).testWrapper.getPeerId())),
-    pageB.evaluate(() => (window as any).testWrapper.whenReady().then(() => (window as any).testWrapper.getPeerId())),
-    pageC.evaluate(() => (window as any).testWrapper.whenReady().then(() => (window as any).testWrapper.getPeerId()))
-  ]);
+  const peerIdA = await pageA.evaluate(() => (window as any).testWrapper.whenReady().then(() => (window as any).testWrapper.getPeerId()));
+  const peerIdB = await pageB.evaluate(() => (window as any).testWrapper.whenReady().then(() => (window as any).testWrapper.getPeerId()));
+  const peerIdC = await pageC.evaluate(() => (window as any).testWrapper.whenReady().then(() => (window as any).testWrapper.getPeerId()));
 
   console.log('Multi-next-hop test IDs:', { A: peerIdA, B: peerIdB, C: peerIdC });
 
@@ -157,7 +147,7 @@ test('应该支持多下一跳按延迟排序', async ({ context }) => {
   // 获取 A 的直连节点列表
   const directNodes = await pageA.evaluate(() => {
     const wrapper = (window as any).testWrapper;
-    return (wrapper as any).routingManager.getDirectNodes();
+    return (wrapper as any).router.getDirectNodes();
   });
 
   console.log('A direct nodes:', directNodes);
@@ -223,15 +213,11 @@ test('send 方法应该自动路由（无需手动指定中继节点）', async 
   const pageA = await context.newPage();
   const pageB = await context.newPage();
 
-  await Promise.all([
-    pageA.goto('http://localhost:8080/e2e/test-auto-routing.html'),
-    pageB.goto('http://localhost:8080/e2e/test-auto-routing.html')
-  ]);
+  await pageA.goto('http://localhost:8080/e2e/test-auto-routing.html');
+  await pageB.goto('http://localhost:8080/e2e/test-auto-routing.html');
 
-  const [peerIdA, peerIdB] = await Promise.all([
-    pageA.evaluate(() => (window as any).testWrapper.whenReady().then(() => (window as any).testWrapper.getPeerId())),
-    pageB.evaluate(() => (window as any).testWrapper.whenReady().then(() => (window as any).testWrapper.getPeerId()))
-  ]);
+  const peerIdA = await pageA.evaluate(() => (window as any).testWrapper.whenReady().then(() => (window as any).testWrapper.getPeerId()));
+  const peerIdB = await pageB.evaluate(() => (window as any).testWrapper.whenReady().then(() => (window as any).testWrapper.getPeerId()));
 
   console.log('Auto routing test IDs:', { A: peerIdA, B: peerIdB });
 

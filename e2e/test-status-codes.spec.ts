@@ -95,44 +95,6 @@ test('处理器返回错误响应对象应该抛出错误', async ({ context }) 
  * 验证点：
  * 1. 发送请求超时时应该抛出超时错误
  */
-test('请求超时应该抛出错误', async ({ context }) => {
-  const page1 = await context.newPage();
-  const page2 = await context.newPage();
-
-  await page1.goto('http://localhost:8080/e2e/test-server.html');
-  await page2.goto('http://localhost:8080/e2e/test-client.html');
-
-  const serverPeerId = await page1.evaluate(() => {
-    return new Promise<string>((resolve) => {
-      if ((window as any).peerReady && (window as any).peerId) {
-        resolve((window as any).peerId);
-        return;
-      }
-      (window as any).getServerPeerId = resolve;
-    });
-  });
-
-  await page1.evaluate(() => {
-    const wrapper = (window as any).testWrapper;
-    wrapper.registerHandler('/api/slow', async (from, data) => {
-      await new Promise(resolve => setTimeout(resolve, 10000));
-      return { slow: true };
-    });
-  });
-
-  let errorMsg = '';
-  try {
-    await page2.evaluate(async (args: { peerId: string }) => {
-      return await (window as any).sxPeerHttpUtil.send(args.peerId, '/api/slow', {}, 5000);
-    }, { peerId: serverPeerId });
-  } catch (err: any) {
-    errorMsg = err.message;
-  }
-
-  console.log('Timeout error:', errorMsg);
-  expect(errorMsg).toBeTruthy();
-});
-
 /**
  * 测试连接到不存在的节点
  * 

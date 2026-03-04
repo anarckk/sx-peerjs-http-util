@@ -20,7 +20,7 @@
 
 import { Peer, DataConnection, MediaConnection } from 'peerjs';
 import { CallSessionImpl } from './CallSession';
-import { RoutingManager } from './Routing';
+import { Router } from './Router';
 import { MessageHandler } from './MessageHandler';
 import type {
   Request,
@@ -105,7 +105,7 @@ export class PeerJsWrapper {
   private incomingCallListeners = new Set<IncomingCallListener>();
 
   /** 路由管理器 */
-  private routingManager: RoutingManager;
+  private router: Router;
   /** 消息处理器 */
   private messageHandler: MessageHandler;
 
@@ -128,13 +128,13 @@ export class PeerJsWrapper {
       sendRelayMessage: (targetId: string, message: RelayMessage) => this.sendRelayMessage(targetId, message),
     };
 
-    this.routingManager = new RoutingManager(callbacks, relayConfig);
-    this.routingManager.init();
+    this.router = new Router(callbacks, relayConfig);
+    this.router.init();
     this.messageHandler = new MessageHandler({
       ...callbacks,
       waitForReady: () => this.waitForReady(),
       getSimpleHandlers: () => this.simpleHandlers,
-      onRouteUpdate: (fromPeerId, message) => this.routingManager.handleRouteUpdate(fromPeerId, message),
+      onRouteUpdate: (fromPeerId, message) => this.router.handleRouteUpdate(fromPeerId, message),
     });
 
     this.connect();
@@ -278,11 +278,11 @@ export class PeerJsWrapper {
   }
 
   getRoutingTable(): Record<string, RouteEntry> {
-    return this.routingManager.getRoutingTable();
+    return this.router.getRoutingTable();
   }
 
   getKnownNodes(): string[] {
-    return this.routingManager.getKnownNodes();
+    return this.router.getKnownNodes();
   }
 
   /**
@@ -376,8 +376,8 @@ export class PeerJsWrapper {
               reject(new Error(`Request failed: ${response.status} ${JSON.stringify(response.data)}`));
             } else {
               const latency = Date.now() - startTime;
-              this.routingManager.recordDirectNode(targetId, latency);
-              this.routingManager.broadcastRouteUpdate();
+              this.router.recordDirectNode(targetId, latency);
+              this.router.broadcastRouteUpdate();
               resolve(response.data);
             }
           }
@@ -459,17 +459,17 @@ export class PeerJsWrapper {
                   reject(new Error(`Relay failed: ${response.status} ${JSON.stringify(response.data)}`));
                 } else {
                   const latency = Date.now() - startTime;
-                  this.routingManager.recordDirectNode(nextHopId, latency);
-                  this.routingManager.broadcastRouteUpdate();
+                  this.router.recordDirectNode(nextHopId, latency);
+                  this.router.broadcastRouteUpdate();
                   resolve(response.data);
                 }
               }
             } else if (message.type === 'route-update') {
-              this.routingManager.handleRouteUpdate(nextHopId, message);
+              this.router.handleRouteUpdate(nextHopId, message);
             } else if (message.type === 'route-query') {
-              this.routingManager.handleRouteQuery(nextHopId, message);
+              this.router.handleRouteQuery(nextHopId, message);
             } else if (message.type === 'route-response') {
-              this.routingManager.handleRouteResponse(nextHopId, message);
+              this.router.handleRouteResponse(nextHopId, message);
             }
           });
 
@@ -504,7 +504,7 @@ export class PeerJsWrapper {
     return new Promise((resolve, reject) => {
       this.debugLog('PeerJsWrapper', 'send', { peerId, path, data });
 
-      const nextHops = this.routingManager.getNextHopsToTarget(peerId);
+      const nextHops = this.router.getNextHopsToTarget(peerId);
 
       if (nextHops.length > 0) {
         this.tryRelayChain(peerId, path, data, nextHops, 0)
@@ -547,10 +547,10 @@ export class PeerJsWrapper {
       throw error;
     }
 
-    this.routingManager.removeRoute(peerId);
+    this.router.removeRoute(peerId);
     this.debugLog('PeerJsWrapper', 'routeRemoved', peerId);
 
-    if (!this.routingManager.isRoutingTableEmpty()) {
+    if (!this.router.isRoutingTableEmpty()) {
       return this.performRouteDiscovery(peerId, '', undefined, '');
     }
 
@@ -608,7 +608,7 @@ export class PeerJsWrapper {
   private async performRouteDiscovery(targetId: string, path: string, data: unknown, requestId: string): Promise<unknown> {
     this.debugLog('PeerJsWrapper', 'routeDiscovery', { targetId });
 
-    const routeEntry = await this.routingManager.discoverRoute(targetId);
+    const routeEntry = await this.router.discoverRoute(targetId);
 
     if (!routeEntry || routeEntry.nextHops.length === 0) {
       throw new Error(`Cannot reach ${targetId}: no route found`);
@@ -678,13 +678,13 @@ export class PeerJsWrapper {
                 if (response.status < 200 || response.status >= 300) {
                   reject(new Error(`Relay failed: ${response.status} ${JSON.stringify(response.data)}`));
                 } else {
-                  this.routingManager.recordSuccessfulNode(firstRelay);
-                  this.routingManager.broadcastRouteUpdate();
+                  this.router.recordSuccessfulNode(firstRelay);
+                  this.router.broadcastRouteUpdate();
                   resolve(response.data);
                 }
               }
             } else if (message.type === 'route-update') {
-              this.routingManager.handleRouteUpdate(firstRelay, message);
+              this.router.handleRouteUpdate(firstRelay, message);
             }
           });
 
@@ -779,7 +779,7 @@ export class PeerJsWrapper {
             }
           }
         } else if (message.type === 'route-update') {
-          this.routingManager.handleRouteUpdate(conn.peer, message as RelayMessage);
+          this.router.handleRouteUpdate(conn.peer, message as RelayMessage);
         }
       });
 
@@ -1013,9 +1013,9 @@ export class PeerJsWrapper {
       this.peerInstance = null;
     }
 
-    if (this.routingManager) {
-      this.routingManager.persist();
-      this.routingManager.destroy();
+    if (this.router) {
+      this.router.persist();
+      this.router.destroy();
     }
   }
 }
