@@ -17,6 +17,18 @@
 
 import type { Peer } from 'peerjs';
 import type { RouteEntry, NextHop, DirectNodeLatency, RelayConfig, RelayMessage } from './types';
+import {
+  initRoutingDB,
+  loadRoutingTable,
+  saveRouteEntry,
+  saveRouteEntries,
+  deleteRouteEntry,
+  loadDirectNodes,
+  saveDirectNode,
+  saveDirectNodes,
+  cleanupExpiredRoutes,
+  cleanupExpiredNodes,
+} from './RoutingDB';
 
 /**
  * 路由管理器回调接口
@@ -49,6 +61,14 @@ export class RoutingManager {
   private callbacks: RoutingCallbacks;
   /** 等待路由发现响应的 pending 队列 */
   private pendingRouteQueries = new Map<string, { resolve: (entry: RouteEntry) => void; reject: (err: Error) => void; timer: ReturnType<typeof setTimeout> }>();
+  /** 定时清理定时器 */
+  private cleanupTimer: ReturnType<typeof setInterval> | null = null;
+  /** 周期广播定时器 */
+  private broadcastTimer: ReturnType<typeof setInterval> | null = null;
+  /** 路由表容量限制 */
+  private readonly maxRoutingEntries = 50;
+  /** 过期时间（毫秒）*/
+  private readonly expireAgeMs = 5 * 60 * 1000;
 
   /**
    * 创建路由管理器
@@ -58,6 +78,114 @@ export class RoutingManager {
   constructor(callbacks: RoutingCallbacks, relayConfig?: RelayConfig) {
     this.callbacks = callbacks;
     this.relayConfig = relayConfig ?? {};
+  }
+
+  /**
+   * 初始化路由管理器（从 IndexedDB 加载数据并启动定时任务）
+   */
+  async init(): Promise<void> {
+    await initRoutingDB();
+    await this.loadFromDB();
+    this.startMaintenanceTasks();
+  }
+
+  /**
+   * 从 IndexedDB 加载路由数据
+   */
+  private async loadFromDB(): Promise<void> {
+    try {
+      const routes = await loadRoutingTable();
+      for (const entry of routes) {
+        this.routingTable.set(entry.target, entry);
+      }
+      this.callbacks.debugLog('Routing', 'loadedRoutes', routes.length);
+    } catch (e) {
+      this.callbacks.debugLog('Routing', 'loadError', e);
+    }
+
+    try {
+      const nodes = await loadDirectNodes();
+      this.directNodes = nodes;
+      this.callbacks.debugLog('Routing', 'loadedNodes', nodes.length);
+    } catch (e) {
+      this.callbacks.debugLog('Routing', 'loadNodesError', e);
+    }
+  }
+
+  /**
+   * 启动定时维护任务
+   */
+  private startMaintenanceTasks(): void {
+    this.cleanupTimer = setInterval(() => {
+      this.cleanupExpiredEntries();
+    }, 60000);
+
+    this.broadcastTimer = setInterval(() => {
+      this.broadcastRouteUpdate();
+    }, 30000);
+  }
+
+  /**
+   * 清理过期路由条目
+   */
+  private async cleanupExpiredEntries(): Promise<void> {
+    const now = Date.now();
+
+    for (const [target, entry] of this.routingTable) {
+      if (now - entry.timestamp > this.expireAgeMs) {
+        this.routingTable.delete(target);
+        deleteRouteEntry(target).catch(() => {});
+      }
+    }
+
+    this.directNodes = this.directNodes.filter((node) => {
+      const isExpired = now - node.timestamp > this.expireAgeMs;
+      if (isExpired) {
+        return false;
+      }
+      return true;
+    });
+
+    this.callbacks.debugLog('Routing', 'cleanup', {
+      routes: this.routingTable.size,
+      nodes: this.directNodes.length,
+    });
+  }
+
+  /**
+   * 持久化路由表到 IndexedDB
+   */
+  async persist(): Promise<void> {
+    try {
+      const entries = Array.from(this.routingTable.values());
+      await saveRouteEntries(entries);
+    } catch (e) {
+      this.callbacks.debugLog('Routing', 'persistError', e);
+    }
+
+    try {
+      await saveDirectNodes(this.directNodes);
+    } catch (e) {
+      this.callbacks.debugLog('Routing', 'persistNodesError', e);
+    }
+  }
+
+  /**
+   * 销毁路由管理器（清理定时器）
+   */
+  destroy(): void {
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = null;
+    }
+    if (this.broadcastTimer) {
+      clearInterval(this.broadcastTimer);
+      this.broadcastTimer = null;
+    }
+    this.pendingRouteQueries.forEach((pending) => {
+      clearTimeout(pending.timer);
+    });
+    this.pendingRouteQueries.clear();
   }
 
   /**
@@ -112,6 +240,45 @@ export class RoutingManager {
   getDirectLatency(nodeId: string): number | null {
     const node = this.directNodes.find(n => n.nodeId === nodeId);
     return node ? node.latency : null;
+  }
+
+  /**
+   * 移除失效的路由（通信失败时调用）
+   * @param nodeId 失效的节点 ID
+   */
+  removeRoute(nodeId: string): void {
+    let removed = false;
+    for (const [target, entry] of this.routingTable) {
+      const originalLength = entry.nextHops.length;
+      entry.nextHops = entry.nextHops.filter(h => h.nodeId !== nodeId);
+      if (entry.nextHops.length === 0) {
+        this.routingTable.delete(target);
+        deleteRouteEntry(target).catch(() => {});
+        removed = true;
+      } else if (entry.nextHops.length < originalLength) {
+        entry.timestamp = Date.now();
+        saveRouteEntry(entry).catch(() => {});
+        removed = true;
+      }
+    }
+
+    const nodeIndex = this.directNodes.findIndex(n => n.nodeId === nodeId);
+    if (nodeIndex !== -1) {
+      this.directNodes.splice(nodeIndex, 1);
+      removed = true;
+    }
+
+    if (removed) {
+      this.callbacks.debugLog('Routing', 'routeRemoved', nodeId);
+    }
+  }
+
+  /**
+   * 检查路由表是否为空
+   * @returns 是否为空
+   */
+  isRoutingTableEmpty(): boolean {
+    return this.routingTable.size === 0;
   }
 
   /**
@@ -358,7 +525,7 @@ export class RoutingManager {
 
     if (queryOrigin !== myPeerId) return;
 
-    const pending = Array.from(this.pendingRouteQueries.values()).find(p => true);
+    const pending = Array.from(this.pendingRouteQueries.values())[0];
     if (!pending) return;
 
     let entry = this.routingTable.get(targetNode);

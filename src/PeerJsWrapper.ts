@@ -129,6 +129,7 @@ export class PeerJsWrapper {
     };
 
     this.routingManager = new RoutingManager(callbacks, relayConfig);
+    this.routingManager.init();
     this.messageHandler = new MessageHandler({
       ...callbacks,
       waitForReady: () => this.waitForReady(),
@@ -379,7 +380,6 @@ export class PeerJsWrapper {
               this.routingManager.broadcastRouteUpdate();
               resolve(response.data);
             }
-            conn.close();
           }
         }
       });
@@ -491,9 +491,9 @@ export class PeerJsWrapper {
 
   /**
    * 自动路由发送
-   * 1. 优先尝试直连
-   * 2. 直连失败则查路由表，按延迟排序尝试下一跳
-   * 3. 路由表为空则执行路由发现
+   * 
+   * 1. 查路由表 → 有路由 → 尝试中继 → 全部失败 → 降级直连 → 失败 → 结束
+   * 2. 路由表无目标 → 直连 → 失败 → 结束
    * @param peerId 目标节点 ID
    * @param path 请求路径
    * @param data 请求数据
@@ -504,44 +504,75 @@ export class PeerJsWrapper {
     return new Promise((resolve, reject) => {
       this.debugLog('PeerJsWrapper', 'send', { peerId, path, data });
 
-      this.tryDirectConnect(peerId, path, data, requestId)
-        .then(resolve)
-        .catch((directErr) => {
-          this.debugLog('PeerJsWrapper', 'directFailed', { peerId, error: directErr.message });
+      const nextHops = this.routingManager.getNextHopsToTarget(peerId);
 
-          const errorMsg = directErr.message;
-          const isHttpError = errorMsg.includes('Request failed:') || errorMsg.includes('404') || errorMsg.includes('500');
-          const isConnectionError = errorMsg.includes('timeout') || errorMsg.includes('Connection closed') || errorMsg.includes('Peer instance not available');
-          
-          if (isHttpError) {
-            reject(directErr);
-            return;
-          }
-
-          if (!isConnectionError) {
-            reject(directErr);
-            return;
-          }
-
-          const nextHops = this.routingManager.getNextHopsToTarget(peerId);
-          
-          if (nextHops.length > 0) {
-            this.tryRelayChain(peerId, path, data, nextHops, 0)
-              .then(resolve)
-              .catch((relayErr) => {
-                this.debugLog('PeerJsWrapper', 'relayFailed', { peerId, error: relayErr.message });
-                this.performRouteDiscovery(peerId, path, data, requestId)
-                  .then(resolve)
-                  .catch(reject);
-              });
-          } else {
-            this.debugLog('PeerJsWrapper', 'noRoute', 'performing route discovery');
-            this.performRouteDiscovery(peerId, path, data, requestId)
+      if (nextHops.length > 0) {
+        this.tryRelayChain(peerId, path, data, nextHops, 0)
+          .then(resolve)
+          .catch((relayErr) => {
+            this.debugLog('PeerJsWrapper', 'relayFailed', { peerId, error: relayErr.message });
+            this.fallbackToDirect(peerId, path, data, requestId)
               .then(resolve)
               .catch(reject);
-          }
-        });
+          });
+      } else {
+        this.tryDirectConnect(peerId, path, data, requestId)
+          .then(resolve)
+          .catch((directErr) => {
+            this.debugLog('PeerJsWrapper', 'directFailed', { peerId, error: directErr.message });
+            this.handleSendError(peerId, directErr)
+              .then(resolve)
+              .catch(reject);
+          });
+      }
     });
+  }
+
+  /**
+   * 处理发送错误
+   * @param peerId 目标节点 ID
+   * @param error 错误对象
+   * @returns Promise
+   */
+  private async handleSendError(peerId: string, error: Error): Promise<unknown> {
+    const errorMsg = error.message;
+    const isHttpError = errorMsg.includes('Request failed:') || errorMsg.includes('404') || errorMsg.includes('500');
+    const isConnectionError = errorMsg.includes('timeout') || errorMsg.includes('Connection closed') || errorMsg.includes('Peer instance not available');
+
+    if (isHttpError) {
+      throw error;
+    }
+
+    if (!isConnectionError) {
+      throw error;
+    }
+
+    this.routingManager.removeRoute(peerId);
+    this.debugLog('PeerJsWrapper', 'routeRemoved', peerId);
+
+    if (!this.routingManager.isRoutingTableEmpty()) {
+      return this.performRouteDiscovery(peerId, '', undefined, '');
+    }
+
+    throw new Error(`Cannot reach ${peerId}: no route found and routing table is empty`);
+  }
+
+  /**
+   * 降级到直连尝试
+   * @param peerId 目标节点 ID
+   * @param path 请求路径
+   * @param data 请求数据
+   * @param requestId 请求 ID
+   * @returns Promise
+   */
+  private async fallbackToDirect(peerId: string, path: string, data: unknown, requestId: string): Promise<unknown> {
+    this.debugLog('PeerJsWrapper', 'fallbackToDirect', peerId);
+
+    return this.tryDirectConnect(peerId, path, data, requestId)
+      .catch((directErr) => {
+        this.debugLog('PeerJsWrapper', 'directFailed', { peerId, error: directErr.message });
+        this.handleSendError(peerId, directErr);
+      });
   }
 
   /**
@@ -980,6 +1011,11 @@ export class PeerJsWrapper {
     if (this.peerInstance) {
       this.peerInstance.destroy();
       this.peerInstance = null;
+    }
+
+    if (this.routingManager) {
+      this.routingManager.persist();
+      this.routingManager.destroy();
     }
   }
 }
