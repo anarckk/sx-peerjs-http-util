@@ -138,7 +138,7 @@
 
     // 初始化 wrapper
     function initWrapper() {
-      wrapper = new PeerJsHttpUtil.PeerJsWrapper(myPeerId);
+      wrapper = new PeerJsHttpUtil.PeerJsWrapper(myPeerId, undefined, true);
       peerIdEl.textContent = '连接中...';
       callBtn.disabled = true;
 
