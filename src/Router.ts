@@ -29,6 +29,14 @@ import {
   cleanupExpiredRoutes,
   cleanupExpiredNodes,
 } from './RoutingDB';
+import {
+  MAX_ROUTING_ENTRIES,
+  MAX_DIRECT_NODES,
+  ROUTE_EXPIRE_AGE_MS,
+  ROUTE_CLEANUP_INTERVAL_MS,
+  ROUTE_BROADCAST_INTERVAL_MS,
+  CONNECTION_TIMEOUT_MS,
+} from './constants';
 
 /**
  * 路由管理器回调接口
@@ -65,10 +73,6 @@ export class Router {
   private cleanupTimer: ReturnType<typeof setInterval> | null = null;
   /** 周期广播定时器 */
   private broadcastTimer: ReturnType<typeof setInterval> | null = null;
-  /** 路由表容量限制 */
-  private readonly maxRoutingEntries = 50;
-  /** 过期时间（毫秒）*/
-  private readonly expireAgeMs = 5 * 60 * 1000;
 
   /**
    * 创建路由管理器
@@ -118,11 +122,11 @@ export class Router {
   private startMaintenanceTasks(): void {
     this.cleanupTimer = setInterval(() => {
       this.cleanupExpiredEntries();
-    }, 60000);
+    }, ROUTE_CLEANUP_INTERVAL_MS);
 
     this.broadcastTimer = setInterval(() => {
       this.broadcastRouteUpdate();
-    }, 30000);
+    }, ROUTE_BROADCAST_INTERVAL_MS);
   }
 
   /**
@@ -132,14 +136,14 @@ export class Router {
     const now = Date.now();
 
     for (const [target, entry] of this.routingTable) {
-      if (now - entry.timestamp > this.expireAgeMs) {
+      if (now - entry.timestamp > ROUTE_EXPIRE_AGE_MS) {
         this.routingTable.delete(target);
         deleteRouteEntry(target).catch(() => {});
       }
     }
 
     this.directNodes = this.directNodes.filter((node) => {
-      const isExpired = now - node.timestamp > this.expireAgeMs;
+      const isExpired = now - node.timestamp > ROUTE_EXPIRE_AGE_MS;
       if (isExpired) {
         return false;
       }
@@ -204,7 +208,7 @@ export class Router {
       existing.latency = latency;
       existing.timestamp = timestamp;
     } else {
-      const maxRelayNodes = this.relayConfig.maxRelayNodes ?? 5;
+      const maxRelayNodes = this.relayConfig.maxRelayNodes ?? MAX_DIRECT_NODES;
       this.directNodes.push({ nodeId, latency, timestamp });
       if (this.directNodes.length > maxRelayNodes) {
         this.directNodes.sort((a, b) => a.latency - b.latency);
@@ -416,7 +420,7 @@ export class Router {
       const timer = setTimeout(() => {
         this.pendingRouteQueries.delete(queryId);
         resolve(null);
-      }, 10000);
+      }, CONNECTION_TIMEOUT_MS);
 
       this.pendingRouteQueries.set(queryId, { resolve, reject, timer });
 

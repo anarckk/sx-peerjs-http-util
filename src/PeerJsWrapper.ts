@@ -22,6 +22,11 @@ import { Peer, DataConnection, MediaConnection } from 'peerjs';
 import { CallSessionImpl } from './CallSession';
 import { Router } from './Router';
 import { MessageHandler } from './MessageHandler';
+import {
+  CONNECTION_TIMEOUT_MS,
+  SEND_TIMEOUT_MS,
+  RECONNECT_DELAY_MS,
+} from './constants';
 import type {
   Request,
   Response,
@@ -221,7 +226,7 @@ export class PeerJsWrapper {
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.reconnect();
-    }, 1000);
+    }, RECONNECT_DELAY_MS);
   }
 
   private reconnect(): void {
@@ -301,7 +306,7 @@ export class PeerJsWrapper {
       const timeout = setTimeout(() => {
         conn.close();
         reject(new Error(`Send to ${targetId} timeout`));
-      }, 10000);
+      }, SEND_TIMEOUT_MS);
 
       conn.on('open', () => {
         conn.send(message);
@@ -347,7 +352,7 @@ export class PeerJsWrapper {
           conn.close();
           reject(new Error(`Request timeout: ${targetId}${path}`));
         }
-      }, 30000);
+      }, CONNECTION_TIMEOUT_MS);
 
       conn.on('open', () => {
         const latency = Date.now() - startTime;
@@ -429,7 +434,7 @@ export class PeerJsWrapper {
           const timeout = setTimeout(() => {
             conn.close();
             reject(new Error(`Relay timeout: ${nextHopId}${path}`));
-          }, 30000);
+          }, CONNECTION_TIMEOUT_MS);
 
           conn.on('open', () => {
             this.debugLog('Conn', 'open', nextHopId);
@@ -649,7 +654,7 @@ export class PeerJsWrapper {
           const timeout = setTimeout(() => {
             conn.close();
             reject(new Error(`Relay timeout: ${firstRelay}${path}`));
-          }, 30000);
+          }, CONNECTION_TIMEOUT_MS);
 
           conn.on('open', () => {
             this.debugLog('Conn', 'open', firstRelay);

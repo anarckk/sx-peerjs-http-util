@@ -11,6 +11,7 @@
  */
 
 import type { RouteEntry, DirectNodeLatency } from './types';
+import { ROUTE_EXPIRE_AGE_MS } from './constants';
 
 const DB_NAME = 'peerjs-routing-db';
 const DB_VERSION = 1;
@@ -18,6 +19,35 @@ const ROUTING_TABLE_STORE = 'routing-table';
 const DIRECT_NODES_STORE = 'direct-nodes';
 
 let db: IDBDatabase | null = null;
+
+/**
+ * 创建通用的 Object Store 操作
+ * @param storeName Object Store 名称
+ * @param mode 事务模式
+ * @param operation 要执行的操作
+ * @returns Promise<T>
+ */
+function withStore<T>(
+  storeName: string,
+  mode: IDBTransactionMode,
+  operation: (store: IDBObjectStore) => IDBRequest | void
+): Promise<T> {
+  return openDB().then(database => {
+    return new Promise<T>((resolve, reject) => {
+      const tx = database.transaction(storeName, mode);
+      const store = tx.objectStore(storeName);
+      const request = operation(store) as IDBRequest;
+      
+      if (request) {
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve(request.result);
+      } else {
+        tx.oncomplete = () => resolve(undefined as T);
+        tx.onerror = () => reject(tx.error);
+      }
+    });
+  });
+}
 
 /**
  * 打开数据库连接
@@ -72,14 +102,7 @@ export async function initRoutingDB(): Promise<void> {
  * @param entry 路由表条目
  */
 export async function saveRouteEntry(entry: RouteEntry): Promise<void> {
-  const database = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = database.transaction(ROUTING_TABLE_STORE, 'readwrite');
-    const store = tx.objectStore(ROUTING_TABLE_STORE);
-    const request = store.put(entry);
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve();
-  });
+  await withStore(ROUTING_TABLE_STORE, 'readwrite', store => store.put(entry));
 }
 
 /**
@@ -87,17 +110,18 @@ export async function saveRouteEntry(entry: RouteEntry): Promise<void> {
  * @param entries 路由表条目数组
  */
 export async function saveRouteEntries(entries: RouteEntry[]): Promise<void> {
-  const database = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = database.transaction(ROUTING_TABLE_STORE, 'readwrite');
-    const store = tx.objectStore(ROUTING_TABLE_STORE);
+  await openDB().then(database => {
+    return new Promise<void>((resolve, reject) => {
+      const tx = database.transaction(ROUTING_TABLE_STORE, 'readwrite');
+      const store = tx.objectStore(ROUTING_TABLE_STORE);
 
-    for (const entry of entries) {
-      store.put(entry);
-    }
+      for (const entry of entries) {
+        store.put(entry);
+      }
 
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
   });
 }
 
@@ -106,14 +130,7 @@ export async function saveRouteEntries(entries: RouteEntry[]): Promise<void> {
  * @param target 目标节点 ID
  */
 export async function deleteRouteEntry(target: string): Promise<void> {
-  const database = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = database.transaction(ROUTING_TABLE_STORE, 'readwrite');
-    const store = tx.objectStore(ROUTING_TABLE_STORE);
-    const request = store.delete(target);
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve();
-  });
+  await withStore(ROUTING_TABLE_STORE, 'readwrite', store => store.delete(target));
 }
 
 /**
@@ -121,14 +138,7 @@ export async function deleteRouteEntry(target: string): Promise<void> {
  * @returns Promise<RouteEntry[]>
  */
 export async function loadRoutingTable(): Promise<RouteEntry[]> {
-  const database = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = database.transaction(ROUTING_TABLE_STORE, 'readonly');
-    const store = tx.objectStore(ROUTING_TABLE_STORE);
-    const request = store.getAll();
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result);
-  });
+  return withStore<RouteEntry[]>(ROUTING_TABLE_STORE, 'readonly', store => store.getAll());
 }
 
 /**
@@ -136,7 +146,7 @@ export async function loadRoutingTable(): Promise<RouteEntry[]> {
  * @param maxAgeMs 最大保留时间（毫秒），默认 5 分钟
  * @returns Promise<number> 删除的条目数量
  */
-export async function cleanupExpiredRoutes(maxAgeMs: number = 5 * 60 * 1000): Promise<number> {
+export async function cleanupExpiredRoutes(maxAgeMs: number = ROUTE_EXPIRE_AGE_MS): Promise<number> {
   const database = await openDB();
   const now = Date.now();
 
@@ -167,14 +177,7 @@ export async function cleanupExpiredRoutes(maxAgeMs: number = 5 * 60 * 1000): Pr
  * @param node 直连节点
  */
 export async function saveDirectNode(node: DirectNodeLatency): Promise<void> {
-  const database = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = database.transaction(DIRECT_NODES_STORE, 'readwrite');
-    const store = tx.objectStore(DIRECT_NODES_STORE);
-    const request = store.put(node);
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve();
-  });
+  await withStore(DIRECT_NODES_STORE, 'readwrite', store => store.put(node));
 }
 
 /**
@@ -182,17 +185,18 @@ export async function saveDirectNode(node: DirectNodeLatency): Promise<void> {
  * @param nodes 直连节点数组
  */
 export async function saveDirectNodes(nodes: DirectNodeLatency[]): Promise<void> {
-  const database = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = database.transaction(DIRECT_NODES_STORE, 'readwrite');
-    const store = tx.objectStore(DIRECT_NODES_STORE);
+  await openDB().then(database => {
+    return new Promise<void>((resolve, reject) => {
+      const tx = database.transaction(DIRECT_NODES_STORE, 'readwrite');
+      const store = tx.objectStore(DIRECT_NODES_STORE);
 
-    for (const node of nodes) {
-      store.put(node);
-    }
+      for (const node of nodes) {
+        store.put(node);
+      }
 
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
   });
 }
 
@@ -201,14 +205,7 @@ export async function saveDirectNodes(nodes: DirectNodeLatency[]): Promise<void>
  * @returns Promise<DirectNodeLatency[]>
  */
 export async function loadDirectNodes(): Promise<DirectNodeLatency[]> {
-  const database = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = database.transaction(DIRECT_NODES_STORE, 'readonly');
-    const store = tx.objectStore(DIRECT_NODES_STORE);
-    const request = store.getAll();
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result);
-  });
+  return withStore<DirectNodeLatency[]>(DIRECT_NODES_STORE, 'readonly', store => store.getAll());
 }
 
 /**
@@ -216,14 +213,7 @@ export async function loadDirectNodes(): Promise<DirectNodeLatency[]> {
  * @param nodeId 节点 ID
  */
 export async function deleteDirectNode(nodeId: string): Promise<void> {
-  const database = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = database.transaction(DIRECT_NODES_STORE, 'readwrite');
-    const store = tx.objectStore(DIRECT_NODES_STORE);
-    const request = store.delete(nodeId);
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve();
-  });
+  await withStore(DIRECT_NODES_STORE, 'readwrite', store => store.delete(nodeId));
 }
 
 /**
@@ -231,7 +221,7 @@ export async function deleteDirectNode(nodeId: string): Promise<void> {
  * @param maxAgeMs 最大保留时间（毫秒），默认 5 分钟
  * @returns Promise<number> 删除的节点数量
  */
-export async function cleanupExpiredNodes(maxAgeMs: number = 5 * 60 * 1000): Promise<number> {
+export async function cleanupExpiredNodes(maxAgeMs: number = ROUTE_EXPIRE_AGE_MS): Promise<number> {
   const database = await openDB();
   const now = Date.now();
 

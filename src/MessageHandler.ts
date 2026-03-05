@@ -19,6 +19,7 @@
 
 import type { Peer } from 'peerjs';
 import type { Request, Response, SimpleHandler, RelayMessage } from './types';
+import { CONNECTION_TIMEOUT_MS } from './constants';
 
 /**
  * 消息处理器回调接口
@@ -163,77 +164,19 @@ export class MessageHandler {
   }
 
   /**
-   * 转发中继请求到下一个节点
-   * @param nextHop 下一跳节点 ID
-   * @param message 要转发的消息
-   * @returns 响应数据
-   */
-  private async forwardRelay(nextHop: string, message: RelayMessage): Promise<Response> {
-    return new Promise((resolve, reject) => {
-      this.callbacks.debugLog('MessageHandler', 'forwardRelay', { nextHop });
-
-      this.callbacks.waitForReady()
-        .then(() => {
-          const peerInstance = this.callbacks.getPeerInstance();
-          if (!peerInstance) {
-            reject(new Error('Peer instance not available'));
-            return;
-          }
-
-          const conn = peerInstance.connect(nextHop, { reliable: true });
-
-          const timeout = setTimeout(() => {
-            conn.close();
-            reject(new Error(`Forward timeout: ${nextHop}`));
-          }, 30000);
-
-          conn.on('open', () => {
-            this.callbacks.debugLog('Conn', 'open', nextHop);
-            conn.send(message);
-          });
-
-          conn.on('data', (responseData: unknown) => {
-            const response = responseData as RelayMessage;
-            if (response.type === 'relay-response') {
-              clearTimeout(timeout);
-              conn.close();
-
-              if (response.response) {
-                resolve(response.response);
-              } else {
-                reject(new Error('Invalid relay response'));
-              }
-            }
-          });
-
-          conn.on('error', (err) => {
-            this.callbacks.debugLog('Conn', 'error', { peer: nextHop, error: err });
-            clearTimeout(timeout);
-            reject(err);
-          });
-
-          conn.on('close', () => {
-            this.callbacks.debugLog('Conn', 'close', nextHop);
-            clearTimeout(timeout);
-            reject(new Error('Forward connection closed'));
-          });
-        })
-        .catch(reject);
-    });
-  }
-
-  /**
-   * 转发到最终目标节点（当没有更多中继节点时使用）
+   * 创建连接并发送中继消息的通用方法
    * @param targetId 目标节点 ID
-   * @param request 请求数据
-   * @param originalMessage 原始中继消息
-   * @returns 响应数据
+   * @param message 要发送的消息
+   * @param extractResponse 从响应消息中提取数据的函数
+   * @returns Promise<Response>
    */
-  private async forwardToTarget(targetId: string, request: Request, originalMessage: RelayMessage): Promise<unknown> {
-    const myPeerId = this.callbacks.getMyPeerId();
-    
+  private createConnectionAndSend(
+    targetId: string,
+    message: RelayMessage,
+    extractResponse: (response: RelayMessage) => Response | null
+  ): Promise<Response> {
     return new Promise((resolve, reject) => {
-      this.callbacks.debugLog('MessageHandler', 'forwardToTarget', { targetId });
+      this.callbacks.debugLog('MessageHandler', 'createConnectionAndSend', { targetId });
 
       this.callbacks.waitForReady()
         .then(() => {
@@ -247,34 +190,21 @@ export class MessageHandler {
 
           const timeout = setTimeout(() => {
             conn.close();
-            reject(new Error(`Forward to target timeout: ${targetId}`));
-          }, 30000);
+            reject(new Error(`Connection timeout: ${targetId}`));
+          }, CONNECTION_TIMEOUT_MS);
 
           conn.on('open', () => {
             this.callbacks.debugLog('Conn', 'open', targetId);
-
-            const message: RelayMessage = {
-              type: 'relay-request',
-              id: originalMessage.id,
-              originalTarget: originalMessage.originalTarget,
-              relayPath: [...originalMessage.relayPath, myPeerId],
-              forwardPath: [],
-              request,
-            };
             conn.send(message);
           });
 
           conn.on('data', (responseData: unknown) => {
             const response = responseData as RelayMessage;
-            if (response.type === 'relay-response') {
+            const extracted = extractResponse(response);
+            if (extracted) {
               clearTimeout(timeout);
               conn.close();
-
-              if (response.response) {
-                resolve(response.response.data);
-              } else {
-                reject(new Error('Invalid relay response'));
-              }
+              resolve(extracted);
             }
           });
 
@@ -287,10 +217,62 @@ export class MessageHandler {
           conn.on('close', () => {
             this.callbacks.debugLog('Conn', 'close', targetId);
             clearTimeout(timeout);
-            reject(new Error('Forward connection closed'));
+            reject(new Error('Connection closed'));
           });
         })
         .catch(reject);
     });
+  }
+
+  /**
+   * 转发中继请求到下一个节点
+   * @param nextHop 下一跳节点 ID
+   * @param message 要转发的消息
+   * @returns 响应数据
+   */
+  private async forwardRelay(nextHop: string, message: RelayMessage): Promise<Response> {
+    return this.createConnectionAndSend(
+      nextHop,
+      message,
+      (response) => {
+        if (response.type === 'relay-response' && response.response) {
+          return response.response;
+        }
+        return null;
+      }
+    );
+  }
+
+  /**
+   * 转发到最终目标节点（当没有更多中继节点时使用）
+   * @param targetId 目标节点 ID
+   * @param request 请求数据
+   * @param originalMessage 原始中继消息
+   * @returns 响应数据
+   */
+  private async forwardToTarget(targetId: string, request: Request, originalMessage: RelayMessage): Promise<unknown> {
+    const myPeerId = this.callbacks.getMyPeerId();
+    
+    const message: RelayMessage = {
+      type: 'relay-request',
+      id: originalMessage.id,
+      originalTarget: originalMessage.originalTarget,
+      relayPath: [...originalMessage.relayPath, myPeerId],
+      forwardPath: [],
+      request,
+    };
+
+    const response = await this.createConnectionAndSend(
+      targetId,
+      message,
+      (resp) => {
+        if (resp.type === 'relay-response' && resp.response) {
+          return resp.response;
+        }
+        return null;
+      }
+    );
+
+    return response.data;
   }
 }
