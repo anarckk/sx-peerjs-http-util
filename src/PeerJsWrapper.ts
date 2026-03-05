@@ -26,6 +26,7 @@ import {
   CONNECTION_TIMEOUT_MS,
   SEND_TIMEOUT_MS,
   RECONNECT_DELAY_MS,
+  DEFAULT_TTL,
 } from './constants';
 import type {
   Request,
@@ -446,6 +447,7 @@ export class PeerJsWrapper {
               originalTarget: targetId,
               relayPath: [this.myPeerId],
               forwardPath: [],
+              ttl: DEFAULT_TTL,
               request,
             };
             conn.send(message);
@@ -666,6 +668,7 @@ export class PeerJsWrapper {
               originalTarget: targetId,
               relayPath: [],
               forwardPath: remainingRelays,
+              ttl: DEFAULT_TTL,
               request,
             };
             conn.send(message);

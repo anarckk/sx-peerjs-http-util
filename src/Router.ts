@@ -36,6 +36,7 @@ import {
   ROUTE_CLEANUP_INTERVAL_MS,
   ROUTE_BROADCAST_INTERVAL_MS,
   CONNECTION_TIMEOUT_MS,
+  DEFAULT_TTL,
 } from './constants';
 
 /**
@@ -345,6 +346,7 @@ export class Router {
       originalTarget: targetId,
       relayPath: [],
       forwardPath: [],
+      ttl: DEFAULT_TTL,
       routeUpdate: { reachableNodes },
     };
 
@@ -430,6 +432,7 @@ export class Router {
         originalTarget: targetId,
         relayPath: [myPeerId],
         forwardPath: [],
+        ttl: DEFAULT_TTL,
         routeQuery: {
           queryOrigin: myPeerId,
           targetNode: targetId,
@@ -464,6 +467,7 @@ export class Router {
         originalTarget: queryOrigin,
         relayPath: [],
         forwardPath: [],
+        ttl: DEFAULT_TTL,
         routeResponse: {
           queryOrigin,
           responder: myPeerId,
@@ -479,6 +483,12 @@ export class Router {
       return;
     }
 
+    const currentTTL = message.ttl ?? DEFAULT_TTL;
+    if (currentTTL <= 0) {
+      this.callbacks.debugLog('Routing', 'ttlExpired', { type: 'route-query', id: message.id });
+      return;
+    }
+
     const nextHop = this.findNextHopToTarget(targetNode);
     if (nextHop) {
       const latency = (this.getDirectLatency(fromPeerId) ?? 100) + nextHop.latency;
@@ -488,6 +498,7 @@ export class Router {
         originalTarget: queryOrigin,
         relayPath: [],
         forwardPath: [],
+        ttl: DEFAULT_TTL,
         routeResponse: {
           queryOrigin,
           responder: myPeerId,
@@ -503,6 +514,7 @@ export class Router {
     const forwardMessage: RelayMessage = {
       ...message,
       relayPath: newPath,
+      ttl: currentTTL - 1,
       routeQuery: {
         ...message.routeQuery,
         queryPath: newPath,

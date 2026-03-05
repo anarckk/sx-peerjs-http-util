@@ -87,6 +87,8 @@ export interface RelayMessage {
   relayPath: string[];
   /** 剩余可用转发节点列表 */
   forwardPath: string[];
+  /** TTL（Time To Live）- 消息存活跳数，防止死循环 */
+  ttl?: number;
   /** 请求数据 */
   request?: Request;
   /** 响应数据 */

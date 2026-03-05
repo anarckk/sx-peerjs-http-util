@@ -26,3 +26,6 @@ export const ROUTE_CLEANUP_INTERVAL_MS = 60 * 1000;
 
 /** 路由广播周期（毫秒） */
 export const ROUTE_BROADCAST_INTERVAL_MS = 30 * 1000;
+
+/** 默认 TTL（Time To Live）- 消息最大跳数 */
+export const DEFAULT_TTL = 128;

@@ -19,7 +19,7 @@
 
 import type { Peer } from 'peerjs';
 import type { Request, Response, SimpleHandler, RelayMessage } from './types';
-import { CONNECTION_TIMEOUT_MS } from './constants';
+import { CONNECTION_TIMEOUT_MS, DEFAULT_TTL } from './constants';
 
 /**
  * 消息处理器回调接口
@@ -95,7 +95,6 @@ export class MessageHandler {
     const myPeerId = this.callbacks.getMyPeerId();
     const { originalTarget, relayPath, forwardPath } = relayMessage;
 
-    // 如果我是目标节点，处理请求
     if (myPeerId === originalTarget) {
       const result = await this.processHandler(request.path, from, request.data);
       if (this.isErrorResponse(result)) {
@@ -104,7 +103,15 @@ export class MessageHandler {
       return { status: 200, data: result };
     }
 
-    // 如果还有下一跳，转发到下一个节点
+    const currentTTL = relayMessage.ttl ?? DEFAULT_TTL;
+    if (currentTTL <= 0) {
+      this.callbacks.debugLog('MessageHandler', 'ttlExpired', { type: 'relay-request', id: relayMessage.id });
+      return {
+        status: 502,
+        data: { error: 'TTL expired - message dropped to prevent routing loop' },
+      };
+    }
+
     if (forwardPath.length > 0) {
       const nextHop = forwardPath[0];
       const remainingPath = forwardPath.slice(1);
@@ -116,6 +123,7 @@ export class MessageHandler {
           originalTarget,
           relayPath: [...relayPath, myPeerId],
           forwardPath: remainingPath,
+          ttl: currentTTL - 1,
           request,
         });
         return response;
@@ -127,7 +135,6 @@ export class MessageHandler {
       }
     }
 
-    // 如果没有更多跳数，尝试直连到目标节点
     try {
       const data = await this.forwardToTarget(originalTarget, request, relayMessage);
       return { status: 200, data };
@@ -252,6 +259,7 @@ export class MessageHandler {
    */
   private async forwardToTarget(targetId: string, request: Request, originalMessage: RelayMessage): Promise<unknown> {
     const myPeerId = this.callbacks.getMyPeerId();
+    const currentTTL = originalMessage.ttl ?? DEFAULT_TTL;
     
     const message: RelayMessage = {
       type: 'relay-request',
@@ -259,6 +267,7 @@ export class MessageHandler {
       originalTarget: originalMessage.originalTarget,
       relayPath: [...originalMessage.relayPath, myPeerId],
       forwardPath: [],
+      ttl: currentTTL - 1,
       request,
     };
 
