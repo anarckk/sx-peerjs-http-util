@@ -16,6 +16,25 @@ new PeerJsWrapper(peerId?: string, isDebug?: boolean, server?: ServerConfig, rel
 - `server` (可选): 自定义信令服务器配置
 - `relayConfig` (可选): 中继配置
 
+---
+
+### create() 静态方法
+
+```typescript
+static async create(peerId?: string, isDebug?: boolean, server?: ServerConfig, relayConfig?: RelayConfig): Promise<PeerJsWrapper>
+```
+
+创建实例并等待就绪（语法糖）。
+
+**参数：** 与构造函数相同
+
+**返回：** Promise，resolve 时返回已就绪的 `PeerJsWrapper` 实例
+
+**示例：**
+```typescript
+const wrapper = await PeerJsWrapper.create();
+```
+
 **ServerConfig 接口：**
 ```typescript
 interface ServerConfig {
@@ -44,16 +63,6 @@ getPeerId(): string
 ```
 
 获取当前 Peer ID（同步方法，立即返回）。
-
----
-
-### whenReady()
-
-```typescript
-whenReady(): Promise<void>
-```
-
-等待 Peer 连接到信令服务器。返回 Promise，连接成功时 resolve。
 
 ---
 

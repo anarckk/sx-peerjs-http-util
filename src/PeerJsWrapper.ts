@@ -244,7 +244,7 @@ export class PeerJsWrapper {
     return this.myPeerId;
   }
 
-  whenReady(): Promise<void> {
+  private whenReady(): Promise<void> {
     return this.waitForReady();
   }
 
@@ -620,14 +620,14 @@ export class PeerJsWrapper {
   }
 
   /**
-   * 中继发送（兼容旧接口，内部调用 send）
+   * 中继发送（内部方法，不对外暴露）
    * @param targetId 目标节点 ID
    * @param path 请求路径
    * @param data 请求数据
    * @param relayNodes 手动指定的中继节点（可选，不指定则自动路由）
    * @returns Promise<unknown>
    */
-  relaySend(targetId: string, path: string, data: unknown, relayNodes?: string[]): Promise<unknown> {
+  private relaySend(targetId: string, path: string, data: unknown, relayNodes?: string[]): Promise<unknown> {
     if (!relayNodes || relayNodes.length === 0) {
       return this.send(targetId, path, data);
     }

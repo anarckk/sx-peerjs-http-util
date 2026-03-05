@@ -21,6 +21,8 @@ export type {
   IncomingCallEvent,
   IncomingCallListener,
   RouteEntry,
+  NextHop,
+  DirectNodeLatency,
   RelayConfig,
   RelayMessage,
   ServerConfig
