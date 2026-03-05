@@ -12,3 +12,4 @@ demos 里的示例，isDebug要打开
 [2026-03-05T08:22:19.939Z] [prompt-recorder] event=message.part.updated, role=user, sessionID=ses_3431d1c3cffeJi6vGWiKYd0kPG, textLength=26, textPreview=这个 vue3 demo 应该使用官方公共信令服务器
 [2026-03-05T08:24:02.849Z] [prompt-recorder] event=message.part.updated, role=user, sessionID=ses_3431d1c3cffeJi6vGWiKYd0kPG, textLength=24, textPreview=依次检查索引、长期记忆、经验，并更新该更新的内容
 [2026-03-05T08:36:31.754Z] [prompt-recorder] event=message.part.updated, role=user, sessionID=ses_3431d1c3cffeJi6vGWiKYd0kPG, textLength=12, textPreview=提交所有代码并推送git
+[2026-03-05T08:46:54.343Z] [prompt-recorder] event=message.part.updated, role=user, sessionID=ses_3431d1c3cffeJi6vGWiKYd0kPG, textLength=38, textPreview=所有文件都可以提交，test-results 也一样，这点你要记到长期记忆里
