@@ -6,7 +6,8 @@ export default defineConfig({
   plugins: [vue(), viteSingleFile()],
   server: {
     host: true,
-    port: 3000
+    port: 3001,
+    allowedHosts: ['vm10.lan']
   },
   build: {
     target: 'esnext'
